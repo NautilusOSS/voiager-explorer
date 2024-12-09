@@ -59,7 +59,12 @@ const Navigation: React.FC = () => {
     </Link>
   );
 
-  const isBlockchainActive = ["/blocks", "/transactions", "/accounts", "/top-accounts"].includes(location.pathname);
+  const isBlockchainActive = [
+    "/blocks",
+    "/transactions",
+    "/accounts",
+    "/top-accounts",
+  ].includes(location.pathname);
 
   return (
     <Box
@@ -82,7 +87,13 @@ const Navigation: React.FC = () => {
         mx="auto"
         w="100%"
       >
-        <Flex align="center">
+        <Link
+          as={RouterLink}
+          to="/"
+          display="flex"
+          alignItems="center"
+          _hover={{ textDecoration: "none" }}
+        >
           <Image src="/logo.png" alt="Voi Logo" h="32px" w="32px" mr={3} />
           <Text
             fontSize="xl"
@@ -92,7 +103,7 @@ const Navigation: React.FC = () => {
           >
             Block Explorer
           </Text>
-        </Flex>
+        </Link>
 
         {/* Mobile Menu Button */}
         <IconButton
@@ -136,11 +147,19 @@ const Navigation: React.FC = () => {
               Blockchain
             </MenuButton>
             <MenuList>
-              <MenuItem as={RouterLink} to="/blocks">Blocks</MenuItem>
-              <MenuItem as={RouterLink} to="/transactions">Transactions</MenuItem>
-              <MenuItem as={RouterLink} to="/accounts">Accounts</MenuItem>
+              <MenuItem as={RouterLink} to="/blocks">
+                Blocks
+              </MenuItem>
+              <MenuItem as={RouterLink} to="/transactions">
+                Transactions
+              </MenuItem>
+              <MenuItem as={RouterLink} to="/accounts">
+                Accounts
+              </MenuItem>
               <Divider my={2} />
-              <MenuItem as={RouterLink} to="/top-accounts">Top Accounts</MenuItem>
+              <MenuItem as={RouterLink} to="/top-accounts">
+                Top Accounts
+              </MenuItem>
             </MenuList>
           </Menu>
         </HStack>
