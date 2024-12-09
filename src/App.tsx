@@ -6,6 +6,7 @@ import Block from "./components/Block";
 import Transaction from "./components/Transaction";
 import { GlobalStatsProvider } from "./context/GlobalStatsContext";
 import Transactions from "./pages/Transactions";
+import Blocks from "./pages/Blocks";
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
             <Box w="100%" px={{ base: 2, md: 4 }}>
               <Routes>
                 <Route path="/" element={<Home />} />
+                <Route path="/blocks" element={<Blocks />} />
                 <Route path="/block/:round" element={<Block />} />
                 <Route path="/transaction/:txId" element={<Transaction />} />
                 <Route path="/transactions" element={<Transactions />} />
