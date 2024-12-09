@@ -13,7 +13,7 @@ interface VoiPriceProps {
   priceChange: number | null;
 }
 
-const VoiPrice: React.FC<VoiPriceProps> = ({ price, priceChange }) => {
+const VoiPrice: React.FC<VoiPriceProps> = ({ price }) => {
   const formatPrice = (price: number | null) => {
     if (price === null) return "Loading...";
     return `$${price.toFixed(4)}`;

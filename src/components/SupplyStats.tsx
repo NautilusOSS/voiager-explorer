@@ -18,8 +18,6 @@ interface SupplyStatsProps {
 
 const SupplyStats: React.FC<SupplyStatsProps> = ({
   circulatingSupply,
-  distributedSupply,
-  percentDistributed,
 }) => {
   const TOTAL_SUPPLY = 10_000_000_000; // 10 Billion
 
