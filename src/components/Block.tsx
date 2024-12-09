@@ -632,7 +632,9 @@ const Block: React.FC = () => {
                       )}
 
                       {/* Render ungrouped transactions */}
-                      {ungrouped.map((tx) => renderTransaction(tx))}
+                      {ungrouped.map((tx, index) =>
+                        renderTransaction(tx, index)
+                      )}
                     </>
                   );
                 })()}

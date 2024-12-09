@@ -166,7 +166,7 @@ const LatestTransactions: React.FC = () => {
                 sender: algosdk.encodeAddress(txn.sender.publicKey),
                 fee: Number(txn.fee),
                 note: txn.note,
-                round: block.block.header.round,
+                round: Number(block.block.header.round),
                 index: index,
                 paymentTransaction:
                   txn.type === "pay"
