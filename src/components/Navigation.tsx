@@ -19,7 +19,13 @@ const Navigation: React.FC = () => {
   const location = useLocation();
   const { isOpen, onToggle } = useDisclosure();
 
-  const NavLink = ({ to, children }: { to: string; children: React.ReactNode }) => (
+  const NavLink = ({
+    to,
+    children,
+  }: {
+    to: string;
+    children: React.ReactNode;
+  }) => (
     <Link
       as={RouterLink}
       to={to}
@@ -69,16 +75,7 @@ const Navigation: React.FC = () => {
         w="100%"
       >
         <Flex align="center">
-          <Image
-            src="/voi-logo.png"
-            alt="Voi Logo"
-            h="32px"
-            w="32px"
-            mr={3}
-            fallback={
-              <Box w="32px" h="32px" bg="blue.500" rounded="full" mr={3} />
-            }
-          />
+          <Image src="/logo.png" alt="Voi Logo" h="32px" w="32px" mr={3} />
           <Text
             fontSize="xl"
             fontWeight="bold"
@@ -93,22 +90,21 @@ const Navigation: React.FC = () => {
         <IconButton
           display={{ base: "flex", md: "none" }}
           onClick={onToggle}
-          icon={isOpen ? <CloseIcon w={3} h={3} /> : <HamburgerIcon w={5} h={5} />}
+          icon={
+            isOpen ? <CloseIcon w={3} h={3} /> : <HamburgerIcon w={5} h={5} />
+          }
           variant="ghost"
           aria-label="Toggle Navigation"
           color="gray.600"
           _dark={{ color: "gray.300" }}
           _hover={{
             bg: "gray.100",
-            _dark: { bg: "gray.700" }
+            _dark: { bg: "gray.700" },
           }}
         />
 
         {/* Desktop Navigation */}
-        <HStack
-          spacing={1}
-          display={{ base: "none", md: "flex" }}
-        >
+        <HStack spacing={1} display={{ base: "none", md: "flex" }}>
           <NavLink to="/">Home</NavLink>
           <NavLink to="/blocks">Blocks</NavLink>
           <NavLink to="/transactions">Transactions</NavLink>
@@ -157,4 +153,4 @@ const Navigation: React.FC = () => {
   );
 };
 
-export default Navigation; 
+export default Navigation;
