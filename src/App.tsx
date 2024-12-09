@@ -5,6 +5,7 @@ import Home from "./pages/Home";
 import Block from "./components/Block";
 import Transaction from "./components/Transaction";
 import { GlobalStatsProvider } from "./context/GlobalStatsContext";
+import Transactions from "./pages/Transactions";
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/block/:round" element={<Block />} />
                 <Route path="/transaction/:txId" element={<Transaction />} />
+                <Route path="/transactions" element={<Transactions />} />
               </Routes>
             </Box>
           </Box>

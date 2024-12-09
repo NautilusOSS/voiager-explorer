@@ -10,9 +10,10 @@ import { ExternalLinkIcon } from "@chakra-ui/icons";
 
 interface VoiPriceProps {
   price: number | null;
+  priceChange: number | null;
 }
 
-const VoiPrice: React.FC<VoiPriceProps> = ({ price }) => {
+const VoiPrice: React.FC<VoiPriceProps> = ({ price, priceChange }) => {
   const formatPrice = (price: number | null) => {
     if (price === null) return "Loading...";
     return `$${price.toFixed(4)}`;

@@ -8,7 +8,7 @@ interface PoolResponse {
 }
 
 export const getVoiPrice = async (): Promise<{
-  voi: { usd: number };
+  voi: { usd: number; usd_24h_change: number | null }
 }> => {
   try {
     const response = await fetch(
@@ -27,7 +27,8 @@ export const getVoiPrice = async (): Promise<{
     return {
       voi: {
         usd: price,
-      },
+        usd_24h_change: null
+      }
     };
   } catch (error) {
     console.error("Error fetching VOI price:", error);

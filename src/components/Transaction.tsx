@@ -124,7 +124,7 @@ const Transaction: React.FC = () => {
             </SimpleGrid>
             {tx.note && renderNote(formatNote(tx.note))}
             <Text fontSize="sm" color="gray.500">
-              Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
+              Fee: {(tx.fee / 1_000_000).toFixed(6)} VOI
             </Text>
           </Stack>
         </CardBody>
@@ -219,7 +219,7 @@ const Transaction: React.FC = () => {
             </Box>
             {tx.note && renderNote(formatNote(tx.note))}
             <Text fontSize="sm" color="gray.500">
-              Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
+              Fee: {(tx.fee / 1_000_000).toFixed(6)} VOI
             </Text>
           </Stack>
         </CardBody>
@@ -255,7 +255,7 @@ const Transaction: React.FC = () => {
                 </Box>
                 {transaction.note && renderNote(formatNote(transaction.note))}
                 <Text fontSize="sm" color="gray.500">
-                  Fee: {(Number(transaction.fee) / 1_000_000).toFixed(6)} VOI
+                  Fee: {(transaction.fee / 1_000_000).toFixed(6)} VOI
                 </Text>
               </Stack>
             </CardBody>

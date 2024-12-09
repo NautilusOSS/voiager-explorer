@@ -187,14 +187,14 @@ const Block: React.FC = () => {
         bg="gray.50"
         _dark={{
           borderColor: "gray.700",
-          bg: "gray.800",
+          bg: "gray.800"
         }}
       >
         <Text fontSize="sm" color="gray.500" mb={2}>
           Transaction Group: {formatAddress(groupId)}
         </Text>
         <Stack spacing={4}>
-          {transactions.map((tx, index) => renderTransaction(tx, index))}
+          {transactions.map(tx => renderTransaction(tx))}
         </Stack>
       </Box>
     );

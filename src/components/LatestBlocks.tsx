@@ -70,13 +70,12 @@ const LatestBlocks: React.FC = () => {
         </Text>
         <Stack spacing={4} w="100%">
           <AnimatePresence>
-            {blocks.map((block) => (
-              <RouterLink
-                to={`/block/${block.block.header.round}`}
+            {blocks.map((block, index) => (
+              <RouterLink 
+                to={`/block/${block.block.header.round}`} 
                 key={block.block.header.round.toString()}
-                style={{ width: "100%" }}
+                style={{ width: '100%' }}
               >
-                {/* @ts-ignore */}
                 <MotionCard
                   w="100%"
                   borderRadius="lg"
@@ -93,17 +92,11 @@ const LatestBlocks: React.FC = () => {
                   style={{ transition: "all 0.2s ease-in-out" }}
                 >
                   <CardHeader pb={2}>
-                    <Heading size="md">
-                      Block {block.block.header.round.toString()}
-                    </Heading>
+                    <Heading size="md">Block {block.block.header.round.toString()}</Heading>
                   </CardHeader>
                   <CardBody pt={0}>
                     <StatGroup>
-                      <Stack
-                        spacing={4}
-                        direction={{ base: "column", sm: "row" }}
-                        w="100%"
-                      >
+                      <Stack spacing={4} direction={{ base: "column", sm: "row" }} w="100%">
                         <Stat>
                           <StatLabel>Transactions</StatLabel>
                           <StatNumber>{block.block.payset.length}</StatNumber>
