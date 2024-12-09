@@ -6,8 +6,10 @@ import {
   StatLabel,
   StatNumber,
   StatHelpText,
-  StatGroup,
   Stack,
+  Progress,
+  Text,
+  Box,
 } from "@chakra-ui/react";
 
 interface SupplyStatsProps {
@@ -21,31 +23,39 @@ const SupplyStats: React.FC<SupplyStatsProps> = ({
 }) => {
   const TOTAL_SUPPLY = 10_000_000_000; // 10 Billion
 
-  const formatNumber = (num: string) => {
-    return parseFloat(num).toLocaleString(undefined, {
+  const formatNumber = (num: string | number) => {
+    return Number(num).toLocaleString(undefined, {
       maximumFractionDigits: 2,
     });
   };
 
+  const percentCirculating = (parseFloat(circulatingSupply) / TOTAL_SUPPLY) * 100;
+
   return (
     <Card>
       <CardBody>
-        <StatGroup>
-          <Stack spacing={4} width="100%">
-            <Stat>
-              <StatLabel>Circulating Supply</StatLabel>
-              <StatNumber>{formatNumber(circulatingSupply)} VOI</StatNumber>
-              <StatHelpText>
-                {((parseFloat(circulatingSupply) / TOTAL_SUPPLY) * 100).toFixed(2)}% of total
-              </StatHelpText>
-            </Stat>
-            <Stat>
-              <StatLabel>Total Supply</StatLabel>
-              <StatNumber>{TOTAL_SUPPLY.toLocaleString()} VOI</StatNumber>
-              <StatHelpText>Fixed supply</StatHelpText>
-            </Stat>
-          </Stack>
-        </StatGroup>
+        <Stack spacing={4}>
+          <Stat>
+            <StatLabel>Supply</StatLabel>
+            <StatNumber>{formatNumber(circulatingSupply)} VOI</StatNumber>
+            <StatHelpText>
+              of {formatNumber(TOTAL_SUPPLY)} VOI total
+            </StatHelpText>
+          </Stat>
+          <Box>
+            <Progress 
+              value={percentCirculating} 
+              size="sm" 
+              colorScheme="blue"
+              borderRadius="full"
+              bg="gray.100"
+              _dark={{ bg: "gray.700" }}
+            />
+            <Text fontSize="sm" color="gray.500" mt={1}>
+              {percentCirculating.toFixed(2)}% in circulation
+            </Text>
+          </Box>
+        </Stack>
       </CardBody>
     </Card>
   );

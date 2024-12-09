@@ -312,6 +312,56 @@ const LatestTransactions: React.FC = () => {
 
   if (loading) return <Text>Loading...</Text>;
 
+  if (transactions.length === 0) {
+    return (
+      <Box w="100%" maxW="1400px" mx="auto">
+        <Stack spacing={4} w="100%">
+          <Text fontSize="2xl" mb={4}>
+            Latest Transactions
+          </Text>
+          <Card minH="300px">
+            <CardBody>
+              <Stack
+                spacing={4}
+                align="center"
+                justify="center"
+                textAlign="center"
+                h="100%"
+                py={8}
+              >
+                <Box
+                  fontSize="6xl"
+                  opacity={0.3}
+                  role="img"
+                  aria-label="No transactions"
+                >
+                  💤
+                </Box>
+                <Text fontSize="xl" fontWeight="medium">
+                  No Recent Transactions
+                </Text>
+                <Text color="gray.500">
+                  The network is taking a quick nap. New transactions will
+                  appear here as soon as they happen.
+                </Text>
+                <Box
+                  fontSize="sm"
+                  color="gray.500"
+                  fontStyle="italic"
+                  mt={2}
+                  maxW="md"
+                >
+                  Fun fact: The first Voi transaction was sent on September
+                  12th, 2024, marking the launch of the MainNet!
+                </Box>
+              </Stack>
+            </CardBody>
+          </Card>
+        </Stack>
+      </Box>
+    );
+  }
+
   return (
     <Box w="100%" maxW="1400px" mx="auto">
       <Stack spacing={4} w="100%">

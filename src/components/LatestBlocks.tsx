@@ -41,8 +41,16 @@ const LatestBlocks: React.FC = () => {
   useEffect(() => {
     const fetchBlocks = async () => {
       try {
-        const response = await getLatestBlocks();
-        setBlocks(response.blocks);
+        const response = await getLatestBlocks(20);
+        
+        const blocksWithTransactions = response.blocks.filter(
+          block => block.block.payset.length > 0
+        );
+        
+        const filteredBlocks = blocksWithTransactions.slice(0, 10);
+        
+        setBlocks(filteredBlocks);
+        
         const latestBlock = response.blocks[0]?.block.header.round;
         dispatch({
           type: "UPDATE_STATS",
@@ -57,10 +65,59 @@ const LatestBlocks: React.FC = () => {
         console.error("Error:", error);
       }
     };
+    
     fetchBlocks();
     const interval = setInterval(fetchBlocks, 5000);
     return () => clearInterval(interval);
   }, [dispatch]);
+
+  if (blocks.length === 0) {
+    return (
+      <Box w="100%">
+        <Stack spacing={4}>
+          <Text fontSize="2xl" mb={4}>
+            Latest Voi Blocks
+          </Text>
+          <Card minH="300px">
+            <CardBody>
+              <Stack
+                spacing={4}
+                align="center"
+                justify="center"
+                textAlign="center"
+                h="100%"
+                py={8}
+              >
+                <Box
+                  fontSize="6xl"
+                  opacity={0.3}
+                  role="img"
+                  aria-label="No blocks"
+                >
+                  🔍
+                </Box>
+                <Text fontSize="xl" fontWeight="medium">
+                  Looking for Blocks
+                </Text>
+                <Text color="gray.500">
+                  We're scanning the blockchain for blocks with transactions. 
+                  The network might be taking a breather!
+                </Text>
+                <Box
+                  fontSize="sm"
+                  color="gray.500"
+                  fontStyle="italic"
+                  mt={2}
+                >
+                  Fun fact: Empty blocks help maintain network timing even when there are no transactions.
+                </Box>
+              </Stack>
+            </CardBody>
+          </Card>
+        </Stack>
+      </Box>
+    );
+  }
 
   return (
     <Box w="100%">
