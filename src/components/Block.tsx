@@ -103,6 +103,18 @@ const Block: React.FC = () => {
         const blockData = await indexerClient.lookupBlock(Number(round)).do();
         setBlock(blockData);
         setError(null);
+
+        // Add scroll behavior after block is loaded
+        const hash = window.location.hash;
+        if (hash) {
+          // Small delay to ensure DOM is updated
+          setTimeout(() => {
+            const element = document.querySelector(hash);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 100);
+        }
       } catch (err) {
         setError("Failed to fetch block data");
         console.error(err);
