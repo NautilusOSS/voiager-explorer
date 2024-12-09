@@ -12,6 +12,7 @@ import {
 } from "@chakra-ui/react";
 import { getLatestBlocks } from "../services/algorand";
 import algosdk from "algosdk";
+import { useNavigate } from "react-router-dom";
 
 interface Transaction {
   id: string;
@@ -19,6 +20,8 @@ interface Transaction {
   sender: string;
   fee: number;
   note: Uint8Array;
+  round: number;
+  index: number;
   paymentTransaction?: {
     amount: number;
     receiver: string;
@@ -42,7 +45,11 @@ interface ParsedNote {
 }
 
 const LatestTransactions: React.FC = () => {
+  const navigate = useNavigate();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+  console.log({ transactions });
+
   const [loading, setLoading] = useState(true);
 
   const formatAddress = (address: string) => {
@@ -135,19 +142,22 @@ const LatestTransactions: React.FC = () => {
     }
   };
 
+  const handleClick = (round: number, index: number) => {
+    navigate(`/block/${round}#tx-${index}`);
+  };
+
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
         const response = await getLatestBlocks(5); // Get last 5 blocks
         const allTransactions: Transaction[] = [];
 
-        console.log(response);
+        console.log({ response });
 
         // Extract transactions from each block
         response.blocks.forEach((block) => {
-          console.log(block);
           if (block.block.payset) {
-            block.block.payset.forEach((tx: any) => {
+            block.block.payset.forEach((tx: any, index: number) => {
               const txn = tx.signedTxn.signedTxn.txn;
               console.log({ txn });
               allTransactions.push({
@@ -156,6 +166,8 @@ const LatestTransactions: React.FC = () => {
                 sender: algosdk.encodeAddress(txn.sender.publicKey),
                 fee: Number(txn.fee),
                 note: txn.note,
+                round: block.block.header.round,
+                index: index,
                 paymentTransaction:
                   txn.type === "pay"
                     ? {
@@ -207,7 +219,18 @@ const LatestTransactions: React.FC = () => {
     // Payment Transaction
     if (tx.txType === "pay" && tx.paymentTransaction) {
       return (
-        <Card key={index} w="100%" maxW="100%">
+        <Card
+          key={index}
+          w="100%"
+          maxW="100%"
+          onClick={() => handleClick(tx.round, tx.index)}
+          cursor="pointer"
+          _hover={{
+            transform: "translateY(-2px)",
+            boxShadow: "lg",
+          }}
+          transition="all 0.2s ease-in-out"
+        >
           <CardBody>
             <Stack spacing={4} w="100%">
               <Flex justify="space-between" align="center">
@@ -215,6 +238,9 @@ const LatestTransactions: React.FC = () => {
                   <Badge colorScheme="green" mb={2}>
                     Payment
                   </Badge>
+                  <Text fontSize="xs" color="gray.500">
+                    Index: {tx.index}
+                  </Text>
                   {parsedNote && renderNote(parsedNote)}
                 </Box>
                 <Text fontWeight="bold">
@@ -245,7 +271,18 @@ const LatestTransactions: React.FC = () => {
 
     // Default Card for other transaction types
     return (
-      <Card key={index} w="100%" maxW="100%">
+      <Card
+        key={index}
+        w="100%"
+        maxW="100%"
+        onClick={() => handleClick(tx.round, tx.index)}
+        cursor="pointer"
+        _hover={{
+          transform: "translateY(-2px)",
+          boxShadow: "lg",
+        }}
+        transition="all 0.2s ease-in-out"
+      >
         <CardBody>
           <Stack spacing={4} w="100%">
             <Flex justify="space-between" align="center">
@@ -253,6 +290,9 @@ const LatestTransactions: React.FC = () => {
                 <Badge colorScheme={getBadgeColor(tx.txType)} mb={2}>
                   {formatTxnType(tx.txType)}
                 </Badge>
+                <Text fontSize="xs" color="gray.500">
+                  Index: {tx.index}
+                </Text>
                 {parsedNote && renderNote(parsedNote)}
               </Box>
             </Flex>

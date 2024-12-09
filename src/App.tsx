@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Header from "./components/Header";
 import Home from "./pages/Home";
 import Block from "./components/Block";
+import Transaction from "./components/Transaction";
 import { GlobalStatsProvider } from "./context/GlobalStatsContext";
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/block/:round" element={<Block />} />
+                <Route path="/transaction/:txId" element={<Transaction />} />
               </Routes>
             </Box>
           </Box>

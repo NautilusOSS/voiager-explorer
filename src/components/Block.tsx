@@ -17,6 +17,7 @@ import {
   useColorModeValue,
   Flex,
   Badge,
+  Link,
 } from "@chakra-ui/react";
 import { ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
 import {
@@ -181,7 +182,7 @@ const Block: React.FC = () => {
           Transaction Group: {formatAddress(groupId)}
         </Text>
         <Stack spacing={4}>
-          {transactions.map((tx) => renderTransaction(tx))}
+          {transactions.map((tx, index) => renderTransaction(tx, index))}
         </Stack>
       </Box>
     );
@@ -256,7 +257,7 @@ const Block: React.FC = () => {
     return renderNote(parsedNote);
   };
 
-  const renderTransaction = (tx: any) => {
+  const renderTransaction = (tx: any, index: number) => {
     const isExpanded = expandedTxns.has(tx.id);
 
     const rawDataSection = (
@@ -290,6 +291,7 @@ const Block: React.FC = () => {
       w: "100%",
       mb: 4,
       variant: "outline",
+      id: `tx-${index}`,
     };
 
     // Payment Transaction
@@ -304,7 +306,7 @@ const Block: React.FC = () => {
                     Payment
                   </Badge>
                   <Text fontFamily="mono" fontSize="sm" color="gray.500">
-                    {tx.id}
+                    <Link href={`/transaction/${tx.id}`}>{tx.id}</Link>
                   </Text>
                 </Box>
                 <Text fontWeight="bold">
