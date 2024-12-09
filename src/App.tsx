@@ -7,6 +7,7 @@ import Transaction from "./components/Transaction";
 import { GlobalStatsProvider } from "./context/GlobalStatsContext";
 import Transactions from "./pages/Transactions";
 import Blocks from "./pages/Blocks";
+import Accounts from "./pages/Accounts";
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
                 <Route path="/block/:round" element={<Block />} />
                 <Route path="/transaction/:txId" element={<Transaction />} />
                 <Route path="/transactions" element={<Transactions />} />
+                <Route path="/accounts" element={<Accounts />} />
               </Routes>
             </Box>
           </Box>
