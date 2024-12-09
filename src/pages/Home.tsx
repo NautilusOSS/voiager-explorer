@@ -1,5 +1,5 @@
 import React from "react";
-import { Stack, Heading, Box, Container } from "@chakra-ui/react";
+import { Stack, Box, Container } from "@chakra-ui/react";
 import GlobalStats from "../components/GlobalStats";
 import LatestBlocks from "../components/LatestBlocks";
 import LatestTransactions from "../components/LatestTransactions";

@@ -13,16 +13,9 @@ import {
   SimpleGrid,
   Divider,
   Button,
-  Collapse,
   Code,
   useColorModeValue,
   Flex,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
   Badge,
 } from "@chakra-ui/react";
 import { ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
@@ -38,23 +31,28 @@ import { indexerClient } from "../services/algorand";
 import { Buffer } from "buffer";
 
 interface BlockData {
-  block: {
-    hash: string;
-    previousBlockHash: string;
-    seed: string;
-    proposer: string;
-    round: number;
-    timestamp: number;
-    transactions: Array<{
-      id: string;
-      intra: number;
-      txn: {
-        sig: string;
-        txType: string;
-        note?: Uint8Array | null;
-      };
-    }>;
-  };
+  timestamp: number;
+  transactions: Array<{
+    id: string;
+    intra: number;
+    fee: number;
+    note?: Uint8Array;
+    sender: string;
+    txType: string;
+    paymentTransaction?: {
+      amount: number;
+      receiver: string;
+    };
+    applicationTransaction?: {
+      applicationId: number;
+      applicationArgs?: string[];
+    };
+    assetTransferTransaction?: {
+      assetId: number;
+      receiver: string;
+    };
+    group?: Uint8Array;
+  }>;
 }
 
 interface ParsedNote {
@@ -68,7 +66,7 @@ const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
 
 const Block: React.FC = () => {
   const { round } = useParams<{ round: string }>();
-  const [block, setBlock] = useState<BlockData | null>(null);
+  const [block, setBlock] = useState<BlockData | any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRawData, setShowRawData] = useState(false);
@@ -86,7 +84,7 @@ const Block: React.FC = () => {
   };
 
   const toggleTxnRawData = (txId: string) => {
-    setExpandedTxns(prev => {
+    setExpandedTxns((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(txId)) {
         newSet.delete(txId);
@@ -118,7 +116,7 @@ const Block: React.FC = () => {
   }, [round]);
 
   // Add custom serializer for BigInt
-  const blockSerializer = (key: string, value: any) => {
+  const blockSerializer = (_: string, value: any) => {
     if (typeof value === "bigint") {
       return value.toString();
     }
@@ -193,7 +191,7 @@ const Block: React.FC = () => {
     if (!note) return {};
     try {
       const decoded = new TextDecoder().decode(note);
-      console.log('Decoded note:', decoded);
+      console.log("Decoded note:", decoded);
 
       // Check for ALGOKIT_DEPLOYER format
       const algoKitMatch = decoded.match(/^ALGOKIT_DEPLOYER:j(.+)$/);
@@ -207,7 +205,7 @@ const Block: React.FC = () => {
             raw: decoded,
           };
         } catch (e) {
-          console.error('Error parsing AlgoKit JSON:', e);
+          console.error("Error parsing AlgoKit JSON:", e);
         }
       }
 
@@ -217,15 +215,15 @@ const Block: React.FC = () => {
         const parsed = {
           client: match[1],
           type: match[2] as "u" | "j",
-          message: match[3].replace(/\s+/g, ' ').trim(), // Normalize whitespace
+          message: match[3].replace(/\s+/g, " ").trim(), // Normalize whitespace
           raw: decoded,
         };
-        console.log('Parsed note:', parsed);
+        console.log("Parsed note:", parsed);
         return parsed;
       }
 
       // If no match, return the raw decoded string
-      console.log('No match, returning raw');
+      console.log("No match, returning raw");
       return {
         raw: decoded,
       };
@@ -260,7 +258,7 @@ const Block: React.FC = () => {
 
   const renderTransaction = (tx: any) => {
     const isExpanded = expandedTxns.has(tx.id);
-    
+
     const rawDataSection = (
       <>
         <Divider />
@@ -272,7 +270,7 @@ const Block: React.FC = () => {
         >
           {isExpanded ? "Hide" : "View"} Raw Data
         </Button>
-        
+
         {isExpanded && (
           <Box
             bg={useColorModeValue("gray.50", "gray.900")}
@@ -545,7 +543,10 @@ const Block: React.FC = () => {
               <Stat>
                 <StatLabel>Total Fees</StatLabel>
                 <StatNumber>
-                  {(calculateTotalFees(block.transactions) / 1_000_000).toFixed(6)} VOI
+                  {(calculateTotalFees(block.transactions) / 1_000_000).toFixed(
+                    6
+                  )}{" "}
+                  VOI
                 </StatNumber>
               </Stat>
             </Stack>
@@ -574,7 +575,7 @@ const Block: React.FC = () => {
                         dataKey="value"
                       >
                         {getTransactionTypeCounts(block.transactions).map(
-                          (entry, index) => (
+                          (_, index) => (
                             <Cell
                               key={`cell-${index}`}
                               fill={COLORS[index % COLORS.length]}

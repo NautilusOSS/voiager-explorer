@@ -19,19 +19,6 @@ export const indexerClient = new algosdk.Indexer(
   VOI_MAINNET_INDEXER_PORT
 );
 
-// Add this at the top of the file with other imports
-interface BlockCache {
-  block: any; // Replace 'any' with proper block type if available
-  timestamp: number;
-}
-
-// Add this cache array outside of the function to persist between calls
-let blockCache: BlockCache[] = [];
-const MAX_CACHE_SIZE = 100;
-
-let diffCache: number[] = [];
-const MAX_DIFF_CACHE_SIZE = 100;
-
 export const getLatestBlocks = async (limit: number = 10) => {
   try {
     const status = await algodClient.status().do();
@@ -67,8 +54,6 @@ export const getLatestBlocks = async (limit: number = 10) => {
     throw error;
   }
 };
-
-console.log({ blockCache });
 
 export const getTransaction = async (txId: string) => {
   try {

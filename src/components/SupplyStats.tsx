@@ -16,11 +16,7 @@ interface SupplyStatsProps {
   percentDistributed: string;
 }
 
-const SupplyStats: React.FC<SupplyStatsProps> = ({
-  circulatingSupply,
-  distributedSupply,
-  percentDistributed,
-}) => {
+const SupplyStats: React.FC<SupplyStatsProps> = ({ circulatingSupply }) => {
   const TOTAL_SUPPLY = 10_000_000_000; // 10 Billion
 
   const formatNumber = (num: string) => {
@@ -38,7 +34,10 @@ const SupplyStats: React.FC<SupplyStatsProps> = ({
               <StatLabel>Circulating Supply</StatLabel>
               <StatNumber>{formatNumber(circulatingSupply)} VOI</StatNumber>
               <StatHelpText>
-                {((parseFloat(circulatingSupply) / TOTAL_SUPPLY) * 100).toFixed(2)}% of total
+                {((parseFloat(circulatingSupply) / TOTAL_SUPPLY) * 100).toFixed(
+                  2
+                )}
+                % of total
               </StatHelpText>
             </Stat>
             <Stat>
@@ -53,4 +52,4 @@ const SupplyStats: React.FC<SupplyStatsProps> = ({
   );
 };
 
-export default SupplyStats; 
+export default SupplyStats;

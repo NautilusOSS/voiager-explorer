@@ -5,7 +5,6 @@ import {
   CardBody,
   Stack,
   Text,
-  Heading,
   Divider,
   Badge,
   Flex,
@@ -19,7 +18,7 @@ interface Transaction {
   txType: string;
   sender: string;
   fee: number;
-  note: string;
+  note: Uint8Array;
   paymentTransaction?: {
     amount: number;
     receiver: string;
@@ -280,7 +279,7 @@ const LatestTransactions: React.FC = () => {
           Latest Transactions
         </Text>
         <Stack spacing={4} w="100%">
-          {transactions.map((tx) => renderTransaction(tx))}
+          {transactions.map((tx, index) => renderTransaction(tx, index))}
         </Stack>
       </Stack>
     </Box>
