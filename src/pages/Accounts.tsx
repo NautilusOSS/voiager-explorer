@@ -93,7 +93,6 @@ const Accounts: React.FC = () => {
       </Box>
     );
   }
-
   return (
     <Container maxW="8xl" py={8}>
       <Stack spacing={6}>
@@ -167,3 +166,4 @@ const Accounts: React.FC = () => {
 };
 
 export default Accounts;
+

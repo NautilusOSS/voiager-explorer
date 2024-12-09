@@ -9,6 +9,7 @@ import Transactions from "./pages/Transactions";
 import Blocks from "./pages/Blocks";
 import Accounts from "./pages/Accounts";
 import Account from "./pages/Account";
+import TopAccounts from "./pages/TopAccounts";
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
                 <Route path="/transaction/:txId" element={<Transaction />} />
                 <Route path="/transactions" element={<Transactions />} />
                 <Route path="/accounts" element={<Accounts />} />
+                <Route path="/top-accounts" element={<TopAccounts />} />
                 <Route path="/account/:address" element={<Account />} />
               </Routes>
             </Box>

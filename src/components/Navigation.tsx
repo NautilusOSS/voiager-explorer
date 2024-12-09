@@ -11,8 +11,14 @@ import {
   Collapse,
   useDisclosure,
   SlideFade,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  Button,
+  Divider,
 } from "@chakra-ui/react";
-import { HamburgerIcon, CloseIcon } from "@chakra-ui/icons";
+import { HamburgerIcon, CloseIcon, ChevronDownIcon } from "@chakra-ui/icons";
 import { Link as RouterLink, useLocation } from "react-router-dom";
 
 const Navigation: React.FC = () => {
@@ -52,6 +58,8 @@ const Navigation: React.FC = () => {
       {children}
     </Link>
   );
+
+  const isBlockchainActive = ["/blocks", "/transactions", "/accounts", "/top-accounts"].includes(location.pathname);
 
   return (
     <Box
@@ -106,9 +114,35 @@ const Navigation: React.FC = () => {
         {/* Desktop Navigation */}
         <HStack spacing={1} display={{ base: "none", md: "flex" }}>
           <NavLink to="/">Home</NavLink>
-          <NavLink to="/blocks">Blocks</NavLink>
-          <NavLink to="/transactions">Transactions</NavLink>
-          <NavLink to="/accounts">Accounts</NavLink>
+          <Menu>
+            <MenuButton
+              as={Button}
+              rightIcon={<ChevronDownIcon />}
+              variant="ghost"
+              px={4}
+              py={2}
+              fontWeight="medium"
+              color={isBlockchainActive ? "blue.500" : "gray.600"}
+              _hover={{
+                bg: "gray.100",
+              }}
+              _dark={{
+                color: isBlockchainActive ? "blue.300" : "gray.300",
+                _hover: {
+                  bg: "gray.700",
+                },
+              }}
+            >
+              Blockchain
+            </MenuButton>
+            <MenuList>
+              <MenuItem as={RouterLink} to="/blocks">Blocks</MenuItem>
+              <MenuItem as={RouterLink} to="/transactions">Transactions</MenuItem>
+              <MenuItem as={RouterLink} to="/accounts">Accounts</MenuItem>
+              <Divider my={2} />
+              <MenuItem as={RouterLink} to="/top-accounts">Top Accounts</MenuItem>
+            </MenuList>
+          </Menu>
         </HStack>
       </Flex>
 
@@ -145,6 +179,8 @@ const Navigation: React.FC = () => {
               <NavLink to="/blocks">Blocks</NavLink>
               <NavLink to="/transactions">Transactions</NavLink>
               <NavLink to="/accounts">Accounts</NavLink>
+              <Box w="100%" h="2px" bg="gray.200" _dark={{ bg: "gray.600" }} />
+              <NavLink to="/top-accounts">Top Accounts</NavLink>
             </VStack>
           </Box>
         </Collapse>
