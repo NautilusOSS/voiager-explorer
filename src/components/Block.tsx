@@ -111,7 +111,7 @@ const Block: React.FC = () => {
           setTimeout(() => {
             const element = document.querySelector(hash);
             if (element) {
-              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              element.scrollIntoView({ behavior: "smooth", block: "center" });
             }
           }, 100);
         }
@@ -364,7 +364,7 @@ const Block: React.FC = () => {
                     Application Call
                   </Badge>
                   <Text fontFamily="mono" fontSize="sm" color="gray.500">
-                    {tx.id}
+                    <Link href={`/transaction/${tx.id}`}>{tx.id}</Link>
                   </Text>
                 </Box>
                 <Text>
@@ -416,7 +416,7 @@ const Block: React.FC = () => {
                     Asset Transfer
                   </Badge>
                   <Text fontFamily="mono" fontSize="sm" color="gray.500">
-                    {tx.id}
+                    <Link href={`/transaction/${tx.id}`}>{tx.id}</Link>
                   </Text>
                 </Box>
                 <Text fontWeight="bold">
@@ -456,7 +456,7 @@ const Block: React.FC = () => {
               <Box>
                 <Badge mb={2}>{formatTxnType(tx.txType)}</Badge>
                 <Text fontFamily="mono" fontSize="sm" color="gray.500">
-                  {tx.id}
+                  <Link href={`/transaction/${tx.id}`}>{tx.id}</Link>
                 </Text>
               </Box>
             </Flex>
