@@ -15,7 +15,7 @@ import {
   useColorModeValue,
   SimpleGrid,
 } from "@chakra-ui/react";
-import { ChevronDownIcon, ChevronUpIcon } from "@chakra-ui/icons";
+import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon } from "@chakra-ui/icons";
 import { getTransaction } from "../services/algorand";
 
 interface ParsedNote {
@@ -337,6 +337,23 @@ const Transaction: React.FC = () => {
       )}
 
       {renderTransactionDetails()}
+
+      <Box pt={4} textAlign="center">
+        <Text color="gray.500" fontSize="sm" mb={2}>
+          Found a new transaction type? Submit it for rewards!
+        </Text>
+        <Button
+          as="a"
+          href="https://docs.google.com/forms/d/e/1FAIpQLSdBliiztOgCibPldYoWPDZmmyiPKcvjY9VoFsxY0pxWuW8njg/viewform"
+          target="_blank"
+          rel="noopener noreferrer"
+          colorScheme="blue"
+          size="sm"
+          rightIcon={<ExternalLinkIcon />}
+        >
+          Submit Transaction Type
+        </Button>
+      </Box>
     </Stack>
   );
 };
