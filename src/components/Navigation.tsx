@@ -64,6 +64,7 @@ const Navigation: React.FC = () => {
     "/transactions",
     "/accounts",
     "/top-accounts",
+    "/applications",
   ].includes(location.pathname);
 
   return (
@@ -159,12 +160,9 @@ const Navigation: React.FC = () => {
               <MenuItem as={RouterLink} to="/applications">
                 Applications
               </MenuItem>
-              <Divider my={2} />
-              <MenuItem as={RouterLink} to="/top-accounts">
-                Top Accounts
-              </MenuItem>
             </MenuList>
           </Menu>
+          <NavLink to="/tokens">Tokens</NavLink>
         </HStack>
       </Flex>
 
@@ -201,8 +199,10 @@ const Navigation: React.FC = () => {
               <NavLink to="/blocks">Blocks</NavLink>
               <NavLink to="/transactions">Transactions</NavLink>
               <NavLink to="/accounts">Accounts</NavLink>
+              <NavLink to="/applications">Applications</NavLink>
               <Box w="100%" h="2px" bg="gray.200" _dark={{ bg: "gray.600" }} />
               <NavLink to="/top-accounts">Top Accounts</NavLink>
+              <NavLink to="/tokens">Tokens</NavLink>
             </VStack>
           </Box>
         </Collapse>
