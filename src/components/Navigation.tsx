@@ -16,7 +16,6 @@ import {
   MenuList,
   MenuItem,
   Button,
-  Divider,
 } from "@chakra-ui/react";
 import { HamburgerIcon, CloseIcon, ChevronDownIcon } from "@chakra-ui/icons";
 import { Link as RouterLink, useLocation } from "react-router-dom";

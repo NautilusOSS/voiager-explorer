@@ -16,7 +16,6 @@ import {
   StatNumber,
   StatArrow,
   StatHelpText,
-  Link,
   ButtonGroup,
   IconButton,
   Table,
@@ -72,14 +71,12 @@ const TokenTracker: React.FC = () => {
   const [voiUsdPrice, setVoiUsdPrice] = useState<number | null>(null);
 
   const tableBackground = useColorModeValue("white", "gray.800");
-  const tableBorderColor = useColorModeValue("gray.200", "gray.700");
-
-  const formatAddress = (address: string) => {
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
 
   const formatSupply = (supply: string, decimals: number) => {
-    if (supply === "115792089237316195423570985008687907853269984665640564039457584007913129639935") {
+    if (
+      supply ===
+      "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+    ) {
       return "\u00A0";
     }
     const num = Number(supply) / Math.pow(10, decimals);
@@ -91,7 +88,7 @@ const TokenTracker: React.FC = () => {
   const formatPrice = (price: string | null) => {
     if (!price || Number(price) === 0) return null;
     if (!voiUsdPrice) return null;
-    
+
     const voiPrice = Number(price);
     const usdPrice = voiPrice * voiUsdPrice;
     return usdPrice.toFixed(6);
@@ -105,12 +102,13 @@ const TokenTracker: React.FC = () => {
           "https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/tokens?includes=all"
         );
         const data = await response.json();
-        
+
         // Filter out test tokens and sort by price
         const filteredTokens = data.tokens
-          .filter((token: Token) => 
-            !token.name.toLowerCase().includes("test") &&
-            token.verified !== -1 // Exclude unverified tokens
+          .filter(
+            (token: Token) =>
+              !token.name.toLowerCase().includes("test") &&
+              token.verified !== -1 // Exclude unverified tokens
           )
           .sort((a: Token, b: Token) => {
             const aPrice = a.price ? Number(a.price) : 0;
@@ -139,7 +137,7 @@ const TokenTracker: React.FC = () => {
         const data = await getVoiPrice();
         setVoiUsdPrice(data.voi.usd);
       } catch (error) {
-        console.error('Error fetching VOI price:', error);
+        console.error("Error fetching VOI price:", error);
       }
     };
 
@@ -151,12 +149,12 @@ const TokenTracker: React.FC = () => {
   const renderPrice = (price: string | null) => {
     const usdPrice = formatPrice(price);
     return (
-      <Tooltip 
-        label={price ? `${Number(price).toFixed(6)} VOI` : '\u00A0'} 
+      <Tooltip
+        label={price ? `${Number(price).toFixed(6)} VOI` : "\u00A0"}
         hasArrow
       >
         <Text fontSize="sm" fontWeight="semibold">
-          {usdPrice ? `$${usdPrice}` : '\u00A0'}
+          {usdPrice ? `$${usdPrice}` : "\u00A0"}
         </Text>
       </Tooltip>
     );
@@ -196,7 +194,11 @@ const TokenTracker: React.FC = () => {
           {renderPrice(token.price)}
           <Text
             fontSize="xs"
-            color={token.change_7d?.percent_change >= 0 ? "green.500" : "red.500"}
+            color={
+              token.change_7d?.percent_change || 0 >= 0
+                ? "green.500"
+                : "red.500"
+            }
           >
             {token.change_7d?.percent_change ? (
               <>
@@ -242,7 +244,11 @@ const TokenTracker: React.FC = () => {
                 {renderPrice(token.price)}
                 {token.change_24h?.percent_change && (
                   <Text
-                    color={token.change_24h.percent_change >= 0 ? "green.500" : "red.500"}
+                    color={
+                      token.change_24h.percent_change >= 0
+                        ? "green.500"
+                        : "red.500"
+                    }
                     fontSize="sm"
                   >
                     {token.change_24h.percent_change.toFixed(2)}%
@@ -291,21 +297,24 @@ const TokenTracker: React.FC = () => {
                   {token.change_24h?.percent_change && (
                     <StatHelpText>
                       <StatArrow
-                        type={token.change_24h.percent_change >= 0 ? "increase" : "decrease"}
+                        type={
+                          token.change_24h.percent_change >= 0
+                            ? "increase"
+                            : "decrease"
+                        }
                       />
                       {token.change_24h.percent_change.toFixed(2)}% (24h)
                     </StatHelpText>
                   )}
                 </Stat>
-                {token.totalSupply !== "115792089237316195423570985008687907853269984665640564039457584007913129639935" && (
+                {token.totalSupply !==
+                  "115792089237316195423570985008687907853269984665640564039457584007913129639935" && (
                   <Stat>
                     <StatLabel>Total Supply</StatLabel>
                     <StatNumber fontSize="lg">
                       {formatSupply(token.totalSupply, token.decimals)}
                     </StatNumber>
-                    <StatHelpText>
-                      {token.decimals} decimals
-                    </StatHelpText>
+                    <StatHelpText>{token.decimals} decimals</StatHelpText>
                   </Stat>
                 )}
               </SimpleGrid>
@@ -338,13 +347,13 @@ const TokenTracker: React.FC = () => {
             >
               <Td>{token.name}</Td>
               <Td>{token.symbol}</Td>
-              <Td isNumeric>
-                {renderPrice(token.price)}
-              </Td>
+              <Td isNumeric>{renderPrice(token.price)}</Td>
               <Td isNumeric>
                 <Text
                   color={
-                    token.change_7d?.percent_change >= 0 ? "green.500" : "red.500"
+                    token.change_7d?.percent_change || 0 >= 0
+                      ? "green.500"
+                      : "red.500"
                   }
                 >
                   {token.change_7d?.percent_change
@@ -352,7 +361,9 @@ const TokenTracker: React.FC = () => {
                     : "\u00A0"}
                 </Text>
               </Td>
-              <Td isNumeric>{formatSupply(token.totalSupply, token.decimals)}</Td>
+              <Td isNumeric>
+                {formatSupply(token.totalSupply, token.decimals)}
+              </Td>
             </Tr>
           ))}
         </Tbody>
@@ -361,7 +372,7 @@ const TokenTracker: React.FC = () => {
   );
 
   // Filter tokens based on verification status
-  const filteredTokens = tokens.filter(token => 
+  const filteredTokens = tokens.filter((token) =>
     showVerifiedOnly ? token.verified === 1 : token.verified !== -1
   );
 
@@ -422,7 +433,8 @@ const TokenTracker: React.FC = () => {
         ) : (
           <>
             {viewMode === "grid-icon" && renderGridIconView(filteredTokens)}
-            {viewMode === "grid-compact" && renderGridCompactView(filteredTokens)}
+            {viewMode === "grid-compact" &&
+              renderGridCompactView(filteredTokens)}
             {viewMode === "grid-full" && renderGridFullView(filteredTokens)}
             {viewMode === "list" && renderListView(filteredTokens)}
           </>
@@ -432,4 +444,4 @@ const TokenTracker: React.FC = () => {
   );
 };
 
-export default TokenTracker; 
+export default TokenTracker;
