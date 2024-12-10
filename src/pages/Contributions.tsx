@@ -107,7 +107,7 @@ const Contributions = () => {
                 <Text>
                   Found a bug? Open an issue on our{" "}
                   <Link
-                    href="https://github.com/nicholasp23/voi-explorer/issues"
+                    href="https://github.com/NautilusOSS/voiager-explorer/issues"
                     isExternal
                     color="blue.500"
                   >
