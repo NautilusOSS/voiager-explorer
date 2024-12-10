@@ -12,15 +12,16 @@ import Account from "./pages/Account";
 import TopAccounts from "./pages/TopAccounts";
 import Applications from "./pages/Applications";
 import Application from "./pages/Application";
+import Footer from "./components/Footer";
 
 function App() {
   return (
     <ChakraProvider>
       <GlobalStatsProvider>
         <BrowserRouter>
-          <Box minH="100vh" w="100vw" bg="gray.50" _dark={{ bg: "gray.900" }} overflowX="hidden">
+          <Box minH="100vh" w="100vw" bg="gray.50" _dark={{ bg: "gray.900" }} overflowX="hidden" display="flex" flexDirection="column">
             <Header />
-            <Box w="100%" px={{ base: 2, md: 4 }}>
+            <Box w="100%" px={{ base: 2, md: 4 }} flex="1">
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/blocks" element={<Blocks />} />
@@ -34,6 +35,7 @@ function App() {
                 <Route path="/application/:id" element={<Application />} />
               </Routes>
             </Box>
+            <Footer />
           </Box>
         </BrowserRouter>
       </GlobalStatsProvider>
