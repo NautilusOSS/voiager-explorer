@@ -156,6 +156,9 @@ const Navigation: React.FC = () => {
               <MenuItem as={RouterLink} to="/accounts">
                 Accounts
               </MenuItem>
+              <MenuItem as={RouterLink} to="/applications">
+                Applications
+              </MenuItem>
               <Divider my={2} />
               <MenuItem as={RouterLink} to="/top-accounts">
                 Top Accounts

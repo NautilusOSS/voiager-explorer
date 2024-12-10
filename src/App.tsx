@@ -10,6 +10,8 @@ import Blocks from "./pages/Blocks";
 import Accounts from "./pages/Accounts";
 import Account from "./pages/Account";
 import TopAccounts from "./pages/TopAccounts";
+import Applications from "./pages/Applications";
+import Application from "./pages/Application";
 
 function App() {
   return (
@@ -26,8 +28,10 @@ function App() {
                 <Route path="/transaction/:txId" element={<Transaction />} />
                 <Route path="/transactions" element={<Transactions />} />
                 <Route path="/accounts" element={<Accounts />} />
+                <Route path="/applications" element={<Applications />} />
                 <Route path="/top-accounts" element={<TopAccounts />} />
                 <Route path="/account/:address" element={<Account />} />
+                <Route path="/application/:id" element={<Application />} />
               </Routes>
             </Box>
           </Box>
