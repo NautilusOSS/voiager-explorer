@@ -16,6 +16,7 @@ import Footer from "./components/Footer";
 import Contributions from "./pages/Contributions";
 import Changelog from "./pages/ChangeLog";
 import TokenTracker from "./pages/TokenTracker";
+import Token from "./pages/Token";
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
                 <Route path="/contributions" element={<Contributions />} />
                 <Route path="/changelog" element={<Changelog />} />
                 <Route path="/tokens" element={<TokenTracker />} />
+                <Route path="/token/:id" element={<Token />} />
               </Routes>
             </Box>
             <Footer />
