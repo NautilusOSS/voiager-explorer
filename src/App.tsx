@@ -13,13 +13,23 @@ import TopAccounts from "./pages/TopAccounts";
 import Applications from "./pages/Applications";
 import Application from "./pages/Application";
 import Footer from "./components/Footer";
+import Contributions from "./pages/Contributions";
+import Changelog from "./pages/ChangeLog";
 
 function App() {
   return (
     <ChakraProvider>
       <GlobalStatsProvider>
         <BrowserRouter>
-          <Box minH="100vh" w="100vw" bg="gray.50" _dark={{ bg: "gray.900" }} overflowX="hidden" display="flex" flexDirection="column">
+          <Box
+            minH="100vh"
+            w="100vw"
+            bg="gray.50"
+            _dark={{ bg: "gray.900" }}
+            overflowX="hidden"
+            display="flex"
+            flexDirection="column"
+          >
             <Header />
             <Box w="100%" px={{ base: 2, md: 4 }} flex="1">
               <Routes>
@@ -33,6 +43,9 @@ function App() {
                 <Route path="/top-accounts" element={<TopAccounts />} />
                 <Route path="/account/:address" element={<Account />} />
                 <Route path="/application/:id" element={<Application />} />
+                <Route path="/contributions" element={<Contributions />} />
+                <Route path="/changelog" element={<Changelog />} />
+                <Route path="/changelog" element={<Changelog />} />
               </Routes>
             </Box>
             <Footer />

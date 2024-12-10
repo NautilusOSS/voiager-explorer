@@ -33,12 +33,20 @@ const Footer: React.FC = () => {
           flexDir={{ base: "column", md: "row" }}
           gap={{ base: 4, md: 0 }}
         >
-          {/* Copyright on the left */}
-          <Text color={textColor}>Voiager © {new Date().getFullYear()}</Text>
+          <Flex align="center" gap={4}>
+            <Text color={textColor}>Voiager © {new Date().getFullYear()}</Text>
+            <Link
+              as={RouterLink}
+              to="/contributions"
+              color={textColor}
+              _hover={{ textDecoration: "underline" }}
+            >
+              Contribute
+            </Link>
+          </Flex>
 
-          {/* Donation address on the right */}
           <Flex align="center" gap={2}>
-            <Text color={textColor}>Donations:</Text>
+            <Text color={textColor}>Donation Address:</Text>
             <Link
               as={RouterLink}
               to={`/account/${donationAddress}`}
@@ -47,8 +55,8 @@ const Footer: React.FC = () => {
               fontFamily="mono"
             >
               {donationAddress.slice(0, 6) + "..." + donationAddress.slice(-4)}{" "}
+              ❤️
             </Link>
-            ❤️
           </Flex>
         </Flex>
       </Container>
