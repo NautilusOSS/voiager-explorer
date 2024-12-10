@@ -42,14 +42,6 @@ const Applications: React.FC = () => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  const decodeBase64 = (str: string) => {
-    try {
-      return atob(str);
-    } catch (e) {
-      return str;
-    }
-  };
-
   const fetchApplications = async () => {
     try {
       setLoading(true);
