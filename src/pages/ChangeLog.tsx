@@ -19,7 +19,7 @@ const Changelog = () => {
 
         <Box>
           <Heading size="md" mb={4}>
-            [0.1.0] - 2024-03-12
+            [0.1.0] - 2024-12-10
           </Heading>
 
           <Box mb={6}>
