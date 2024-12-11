@@ -16,6 +16,7 @@ import {
   MenuList,
   MenuItem,
   Button,
+  Divider,
 } from "@chakra-ui/react";
 import { HamburgerIcon, CloseIcon, ChevronDownIcon } from "@chakra-ui/icons";
 import { Link as RouterLink, useLocation } from "react-router-dom";
@@ -158,6 +159,10 @@ const Navigation: React.FC = () => {
               </MenuItem>
               <MenuItem as={RouterLink} to="/applications">
                 Applications
+              </MenuItem>
+              <Divider />
+              <MenuItem as={RouterLink} to="/top-accounts">
+                Top Accounts
               </MenuItem>
             </MenuList>
           </Menu>

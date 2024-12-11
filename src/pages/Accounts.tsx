@@ -102,7 +102,12 @@ const Accounts: React.FC = () => {
 
         <Stack spacing={4}>
           {accounts.map((account) => (
-            <Card key={account.address}>
+            <Card 
+              key={account.address} 
+              cursor="pointer" 
+              _hover={{ shadow: 'lg' }}
+              onClick={() => navigate(`/account/${account.address}`)}
+            >
               <CardBody>
                 <Stack spacing={4}>
                   <Flex justify="space-between" align="center">
