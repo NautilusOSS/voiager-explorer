@@ -116,7 +116,7 @@ const Token: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [hasMoreTransfers, setHasMoreTransfers] = useState(true);
-  const [transfersPerPage, ] = useState(10);
+  const [transfersPerPage, setTransfersPerPage] = useState(10);
   const [holdersPerPage, setHoldersPerPage] = useState(10);
   const [currentHoldersPage, setCurrentHoldersPage] = useState(1);
   const [currentTransfersPage, setCurrentTransfersPage] = useState(1);
@@ -232,6 +232,12 @@ const Token: React.FC = () => {
     fetchHolders(1);
   };
 
+  const handleTransfersPerPageChange = (value: number) => {
+    setTransfersPerPage(value);
+    setCurrentTransfersPage(1);
+    fetchTransfers(1);
+  };
+
   useEffect(() => {
     const fetchToken = async () => {
       try {
@@ -265,7 +271,7 @@ const Token: React.FC = () => {
       fetchHolders(currentPage);
       fetchTransfers(currentPage);
     }
-  }, [id, currentPage, holdersPerPage]);
+  }, [id, currentPage, holdersPerPage, transfersPerPage]);
 
   useEffect(() => {
     // Filter holders based on search query
@@ -1213,6 +1219,23 @@ const Token: React.FC = () => {
                         </Stack>
                       </CardBody>
                     </Card>
+
+                    <Flex justify="flex-end" mb={2}>
+                      <FormControl maxW="200px">
+                        <Select
+                          value={transfersPerPage}
+                          onChange={(e) =>
+                            handleTransfersPerPageChange(Number(e.target.value))
+                          }
+                          size="sm"
+                        >
+                          <option value={10}>10 rows</option>
+                          <option value={25}>25 rows</option>
+                          <option value={50}>50 rows</option>
+                          <option value={100}>100 rows</option>
+                        </Select>
+                      </FormControl>
+                    </Flex>
 
                     {renderListView()}
 
