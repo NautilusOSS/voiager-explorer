@@ -44,6 +44,7 @@ import {
   useBreakpointValue,
   useColorModeValue,
   Icon,
+  Select,
 } from "@chakra-ui/react";
 import { indexerClient } from "../services/algorand";
 import {
@@ -115,8 +116,7 @@ const Token: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [hasMoreTransfers, setHasMoreTransfers] = useState(true);
-  const holdersPerPage = 10;
-  const transfersPerPage = 10;
+  const [holdersPerPage, setHoldersPerPage] = useState(10);
   const [currentHoldersPage, setCurrentHoldersPage] = useState(1);
   const [currentTransfersPage, setCurrentTransfersPage] = useState(1);
   const [, setActiveTab] = useState(0);
@@ -130,6 +130,8 @@ const Token: React.FC = () => {
   const [transferDetails, setTransferDetails] = useState<{
     [key: string]: any;
   }>({});
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filteredHolders, setFilteredHolders] = useState<TokenHolder[]>([]);
 
   const formatSupply = (supply: string, decimals: number) => {
     if (
@@ -223,6 +225,12 @@ const Token: React.FC = () => {
     setCurrentTransfersPage(1);
   };
 
+  const handleHoldersPerPageChange = (value: number) => {
+    setHoldersPerPage(value);
+    setCurrentHoldersPage(1);
+    fetchHolders(1);
+  };
+
   useEffect(() => {
     const fetchToken = async () => {
       try {
@@ -256,7 +264,15 @@ const Token: React.FC = () => {
       fetchHolders(currentPage);
       fetchTransfers(currentPage);
     }
-  }, [id, currentPage]);
+  }, [id, currentPage, holdersPerPage]);
+
+  useEffect(() => {
+    // Filter holders based on search query
+    const filtered = holders.filter(holder =>
+      holder.accountId.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    setFilteredHolders(filtered);
+  }, [searchQuery, holders]);
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -729,7 +745,7 @@ const Token: React.FC = () => {
     if (isMobile) {
       return (
         <Stack spacing={4}>
-          {holders.map((holder, index) => {
+          {filteredHolders.map((holder, index) => {
             const balance = token
               ? formatBalance(holder.balance, token.decimals)
               : "0";
@@ -818,7 +834,7 @@ const Token: React.FC = () => {
             </Tr>
           </Thead>
           <Tbody>
-            {holders.map((holder, index) => {
+            {filteredHolders.map((holder, index) => {
               const balance = token
                 ? formatBalance(holder.balance, token.decimals)
                 : "0";
@@ -1011,6 +1027,28 @@ const Token: React.FC = () => {
               <TabPanels>
                 <TabPanel px={0}>
                   <Stack spacing={4}>
+                    <Flex justify="space-between" mb={2}>
+                      <FormControl maxW="300px">
+                        <Input
+                          placeholder="Search by address"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          size="sm"
+                        />
+                      </FormControl>
+                      <FormControl maxW="200px">
+                        <Select
+                          value={holdersPerPage}
+                          onChange={(e) => handleHoldersPerPageChange(Number(e.target.value))}
+                          size="sm"
+                        >
+                          <option value={10}>10 rows</option>
+                          <option value={25}>25 rows</option>
+                          <option value={50}>50 rows</option>
+                          <option value={100}>100 rows</option>
+                        </Select>
+                      </FormControl>
+                    </Flex>
                     {renderHoldersView()}
                     {hasMore && (
                       <Flex justify="center" mt={4}>
