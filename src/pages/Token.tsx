@@ -116,7 +116,7 @@ const Token: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [hasMoreTransfers, setHasMoreTransfers] = useState(true);
-  const [transfersPerPage, setTransfersPerPage] = useState(10);
+  const [transfersPerPage, ] = useState(10);
   const [holdersPerPage, setHoldersPerPage] = useState(10);
   const [currentHoldersPage, setCurrentHoldersPage] = useState(1);
   const [currentTransfersPage, setCurrentTransfersPage] = useState(1);
