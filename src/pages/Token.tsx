@@ -116,6 +116,7 @@ const Token: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [hasMoreTransfers, setHasMoreTransfers] = useState(true);
+  const [transfersPerPage, setTransfersPerPage] = useState(10);
   const [holdersPerPage, setHoldersPerPage] = useState(10);
   const [currentHoldersPage, setCurrentHoldersPage] = useState(1);
   const [currentTransfersPage, setCurrentTransfersPage] = useState(1);
@@ -268,7 +269,7 @@ const Token: React.FC = () => {
 
   useEffect(() => {
     // Filter holders based on search query
-    const filtered = holders.filter(holder =>
+    const filtered = holders.filter((holder) =>
       holder.accountId.toLowerCase().includes(searchQuery.toLowerCase())
     );
     setFilteredHolders(filtered);
@@ -1039,7 +1040,9 @@ const Token: React.FC = () => {
                       <FormControl maxW="200px">
                         <Select
                           value={holdersPerPage}
-                          onChange={(e) => handleHoldersPerPageChange(Number(e.target.value))}
+                          onChange={(e) =>
+                            handleHoldersPerPageChange(Number(e.target.value))
+                          }
                           size="sm"
                         >
                           <option value={10}>10 rows</option>
