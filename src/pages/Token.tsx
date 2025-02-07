@@ -45,6 +45,9 @@ import {
   useColorModeValue,
   Icon,
   Select,
+  InputGroup,
+  InputLeftAddon,
+  ButtonGroup,
 } from "@chakra-ui/react";
 import { indexerClient } from "../services/algorand";
 import {
@@ -55,6 +58,29 @@ import {
 } from "@chakra-ui/icons";
 import { useToast } from "@chakra-ui/react";
 import algosdk from "algosdk";
+import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  BarElement,
+} from "chart.js";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  BarElement
+);
 
 interface TokenPrice {
   latest_price: string | null;
@@ -78,6 +104,7 @@ interface Token {
   change_1h: TokenPrice;
   change_24h: TokenPrice;
   change_7d: TokenPrice;
+  latest_price: number;
 }
 
 interface TokenHolder {
@@ -103,6 +130,22 @@ interface TransferFilters {
   maxRound?: number;
   minTimestamp?: number;
   maxTimestamp?: number;
+}
+
+interface Pool {
+  contractId: number;
+  symbolA: string;
+  symbolB: string;
+  tokAId: string;
+  tokBId: string;
+  tvlA: string;
+  tvlB: string;
+  poolBalA: string;
+  poolBalB: string;
+  tokADecimals: number;
+  tokBDecimals: number;
+  tvlUSDC: number;
+  tvlVOI: number;
 }
 
 const Token: React.FC = () => {
@@ -133,6 +176,68 @@ const Token: React.FC = () => {
   }>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredHolders, setFilteredHolders] = useState<TokenHolder[]>([]);
+  const [priceData, setPriceData] = useState<{
+    labels: string[];
+    datasets: {
+      label: string;
+      data: number[];
+      borderColor?: string;
+      backgroundColor?: string;
+      tension?: number;
+      fill?: boolean;
+      pointRadius?: number;
+      pointHoverRadius?: number;
+      borderWidth?: number;
+      yAxisID?: string;
+      order?: number;
+      type?: string;
+    }[];
+  }>({
+    labels: [],
+    datasets: [
+      {
+        label: "Price (USDC)",
+        data: [],
+        borderColor: "rgb(75, 192, 192)",
+        tension: 0.8,
+        fill: true,
+        backgroundColor: "rgba(75, 192, 192, 0.1)",
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        borderWidth: 2,
+        yAxisID: "y",
+        order: 0,
+      },
+      {
+        type: "bar",
+        label: "Volume",
+        data: [],
+        backgroundColor: "rgba(128, 128, 128, 0.2)",
+        yAxisID: "y1",
+        order: 1,
+      },
+    ],
+  });
+  const [pools, setPools] = useState<Pool[]>([]);
+  const [selectedPool, setSelectedPool] = useState<number | null>(null);
+  const [invertedPrice, setInvertedPrice] = useState(false);
+  const [tvlCurrency, setTvlCurrency] = useState<"VOI" | "USDC">("VOI");
+  const [chartType, setChartType] = useState<"price" | "tvl">("price");
+  const [usdcPool, setUsdcPool] = useState<Pool | null>(null);
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  const [showDataTable, setShowDataTable] = useState(false);
+  const [showHoldersTable, setShowHoldersTable] = useState(false);
+  const [, setSwapData] = useState<any[]>([]);
+  const [timeRange, setTimeRange] = useState<"1H" | "24H" | "7D" | "30D">("7D");
+  const [chartLoading, setChartLoading] = useState(false);
+  const [poolHolders, setPoolHolders] = useState<TokenHolder[]>([]);
+  const [poolHoldersLoading, setPoolHoldersLoading] = useState(false);
+
+  // Move breakpoint values to component level
+  const legendDisplay = useBreakpointValue({ base: false, sm: true });
+  const yAxisTickLimit = useBreakpointValue({ base: 5, md: 8 });
+  const xAxisTickLimit = useBreakpointValue({ base: 5, md: 10 });
+  const xAxisRotation = useBreakpointValue({ base: 45, md: 0 });
 
   const formatSupply = (supply: string, decimals: number) => {
     if (
@@ -158,6 +263,19 @@ const Token: React.FC = () => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
+  const formatLargeNumber = (num: number): string => {
+    const absNum = Math.abs(num);
+    if (absNum >= 1e9) {
+      return (num / 1e9).toFixed(2) + "B";
+    } else if (absNum >= 1e6) {
+      return (num / 1e6).toFixed(2) + "M";
+    } else if (absNum >= 1e3) {
+      return (num / 1e3).toFixed(2) + "K";
+    } else {
+      return num.toFixed(2);
+    }
+  };
+
   const fetchHolders = async (page: number) => {
     try {
       const response = await fetch(
@@ -167,9 +285,13 @@ const Token: React.FC = () => {
       );
       const data = await response.json();
 
-      // Filter out zero balances and sort by balance
+      // Filter out zero balances, application address, and sort by balance
       const sortedHolders = data.balances
-        .filter((holder: TokenHolder) => Number(holder.balance) > 0)
+        .filter(
+          (holder: TokenHolder) =>
+            Number(holder.balance) > 0 &&
+            holder.accountId !== `${algosdk.getApplicationAddress(Number(id))}`
+        )
         .sort(
           (a: TokenHolder, b: TokenHolder) =>
             Number(b.balance) - Number(a.balance)
@@ -280,6 +402,227 @@ const Token: React.FC = () => {
     );
     setFilteredHolders(filtered);
   }, [searchQuery, holders]);
+
+  const calculatePoolTVL = (pool: Pool) => {
+    console.log({ pool, token });
+    if (pool.symbolA === "VOI") {
+      return Number(pool.tvlA) * 2;
+    }
+    if (pool.symbolB === "VOI") {
+      return Number(pool.tvlB) * 2;
+    }
+    // either pool symbolA and symbolB are the token
+    if (pool.symbolA === token?.symbol) {
+      return Number(pool.tvlA) * (currentPrice ?? 1) * 2;
+    }
+    if (pool.symbolB === token?.symbol) {
+      return Number(pool.tvlB) * (currentPrice ?? 1) * 2;
+    }
+    return 1;
+  };
+
+  useEffect(() => {
+    const fetchPools = async () => {
+      if (!id) return;
+      try {
+        // First fetch the USDC/VOI pool for price reference
+        const usdcPoolResponse = await fetch(
+          "https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/pools?contractId=395553&includes=all"
+        );
+        const usdcPoolData = await usdcPoolResponse.json();
+        const usdcPool = usdcPoolData.pools[0];
+        setUsdcPool(usdcPool);
+
+        // Calculate VOI price
+        const voiPrice = Number(usdcPool.poolBalA) / Number(usdcPool.poolBalB);
+
+        // Now fetch the token's pools
+        const response = await fetch(
+          `https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/pools?tokenId=${id}`
+        );
+        const data = await response.json();
+        // Calculate both TVL values for each pool
+        const poolsWithTVL = data.pools.map((pool: Pool) => {
+          const tvlVOI = Number(pool.tvlA) + Number(pool.tvlB);
+          let tvlUSDC = tvlVOI * voiPrice;
+
+          // If this is the USDC/VOI pool, calculate TVL differently
+          if (pool.contractId === 395553) {
+            const usdcBalance = Number(pool.poolBalA);
+            const voiBalance = Number(pool.poolBalB);
+            const poolVoiPrice = usdcBalance / voiBalance;
+            tvlUSDC =
+              Number(pool.tvlA) * poolVoiPrice +
+              Number(pool.tvlB) * poolVoiPrice;
+          }
+
+          return {
+            ...pool,
+            tvlUSDC,
+            tvlVOI,
+          };
+        });
+
+        setPools(poolsWithTVL);
+        // Set first pool as default
+        if (poolsWithTVL.length > 0) {
+          setSelectedPool(poolsWithTVL[0].contractId);
+        }
+      } catch (error) {
+        console.error("Error fetching pools:", error);
+      }
+    };
+
+    fetchPools();
+  }, [id]);
+
+  const getTimeRangeParams = (range: string) => {
+    const now = Math.floor(Date.now() / 1000);
+    switch (range) {
+      case "1H":
+        return { start: now - 3600, end: now };
+      case "24H":
+        return { start: now - 86400, end: now };
+      case "7D":
+        return { start: now - 604800, end: now };
+      case "30D":
+        return { start: now - 2592000, end: now };
+      default:
+        return { start: now - 86400, end: now };
+    }
+  };
+
+  const fetchPriceData = async () => {
+    if (!selectedPool) return;
+
+    try {
+      setChartLoading(true);
+      const { start, end } = getTimeRangeParams(timeRange);
+
+      const response = await fetch(
+        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/swaps?contractId=${selectedPool}&min-timestamp=${start}&max-timestamp=${end}`
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      const recentSwaps = data.swaps.slice(0).reverse();
+      setSwapData(recentSwaps.slice().reverse());
+
+      if (chartType === "price") {
+        const validSwaps = recentSwaps.filter(
+          (swap: any) =>
+            typeof swap.price === "number" ||
+            (typeof swap.price === "string" && !isNaN(Number(swap.price)))
+        );
+
+        // Calculate volume for each swap
+        const volumes = validSwaps.map((swap: any) => {
+          const volume = Number(swap.inBalA || swap.inBalB);
+          return volume;
+        });
+
+        setPriceData({
+          labels: validSwaps.map((swap: any) => swap.timestamp * 1000),
+          datasets: [
+            {
+              label: invertedPrice
+                ? `Price (${
+                    pools.find((p) => p.contractId === selectedPool)?.symbolB
+                  }/${
+                    pools.find((p) => p.contractId === selectedPool)?.symbolA
+                  })`
+                : `Price (${
+                    pools.find((p) => p.contractId === selectedPool)?.symbolA
+                  }/${
+                    pools.find((p) => p.contractId === selectedPool)?.symbolB
+                  })`,
+              data: validSwaps.map((swap: any) =>
+                invertedPrice ? 1 / Number(swap.price) : Number(swap.price)
+              ),
+              borderColor: "rgb(75, 192, 192)",
+              tension: 0.4,
+              fill: true,
+              backgroundColor: "rgba(75, 192, 192, 0.1)",
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              borderWidth: 2,
+              yAxisID: "y",
+              order: 0,
+            },
+            {
+              type: "bar",
+              label: "Volume",
+              data: volumes,
+              backgroundColor: "rgba(128, 128, 128, 0.2)",
+              yAxisID: "y1",
+              order: 1,
+            },
+          ],
+        });
+      } else {
+        const voiPrice = usdcPool
+          ? Number(usdcPool.poolBalA) / Number(usdcPool.poolBalB)
+          : 1;
+
+        const tvlHistory = recentSwaps.map((swap: any) => {
+          const totalTvl = calculatePoolTVL({
+            ...pools.find((p) => p.contractId === selectedPool)!,
+            tvlA: swap.poolBalA,
+            tvlB: swap.poolBalB,
+          });
+
+          return tvlCurrency === "VOI" ? totalTvl : totalTvl * voiPrice;
+        });
+
+        setPriceData({
+          labels: recentSwaps.map((swap: any) => swap.timestamp * 1000),
+          datasets: [
+            {
+              label: `TVL (${tvlCurrency})`,
+              data: tvlHistory,
+              borderColor: "rgb(75, 192, 192)",
+              tension: 0.4,
+              fill: true,
+              backgroundColor: "rgba(75, 192, 192, 0.1)",
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              borderWidth: 2,
+              yAxisID: "y",
+              order: 0,
+            },
+          ],
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching price data:", error);
+      setSwapData([]);
+      setPriceData({
+        labels: [],
+        datasets: [
+          {
+            label: "No data available",
+            data: [],
+            borderColor: "rgb(75, 192, 192)",
+            tension: 0.4,
+            fill: true,
+            backgroundColor: "rgba(75, 192, 192, 0.1)",
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            borderWidth: 2,
+            yAxisID: "y",
+            order: 0,
+          },
+        ],
+      });
+    } finally {
+      setChartLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPriceData();
+  }, [selectedPool, pools, invertedPrice, chartType, tvlCurrency, timeRange]);
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -887,6 +1230,78 @@ const Token: React.FC = () => {
     );
   };
 
+  const fetchCurrentPrice = async () => {
+    try {
+      const response = await fetch(
+        "https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/prices"
+      );
+      const data = await response.json();
+
+      // Find matching pool price for this token
+      const tokenPrice = data.prices.find(
+        (price: any) =>
+          (price.symbolA === token?.symbol && price.symbolB === "VOI") ||
+          (price.symbolB === token?.symbol && price.symbolA === "VOI")
+      );
+
+      if (tokenPrice) {
+        // If token is symbolB, invert the price
+        const price =
+          tokenPrice.symbolB === token?.symbol
+            ? 1 / Number(tokenPrice.price)
+            : Number(tokenPrice.price);
+        setCurrentPrice(price);
+      }
+    } catch (error) {
+      console.error("Error fetching current price:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (token?.symbol) {
+      fetchCurrentPrice();
+      // Refresh price every 30 seconds
+      const interval = setInterval(fetchCurrentPrice, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [token?.symbol]);
+
+  const fetchPoolHolders = async (poolId: number) => {
+    if (!poolId) return;
+
+    try {
+      setPoolHoldersLoading(true);
+      const response = await fetch(
+        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${poolId}&limit=${holdersPerPage}&offset=0`
+      );
+      const data = await response.json();
+
+      // Filter out zero balances and sort by balance
+      const sortedHolders = data.balances
+        .filter(
+          (holder: TokenHolder) =>
+            Number(holder.balance) > 0 &&
+            holder.accountId !== `${algosdk.getApplicationAddress(poolId)}`
+        )
+        .sort(
+          (a: TokenHolder, b: TokenHolder) =>
+            Number(b.balance) - Number(a.balance)
+        );
+
+      setPoolHolders(sortedHolders);
+    } catch (err) {
+      console.error("Error fetching pool holders:", err);
+    } finally {
+      setPoolHoldersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedPool && showHoldersTable) {
+      fetchPoolHolders(selectedPool);
+    }
+  }, [selectedPool, showHoldersTable]);
+
   if (loading) {
     return (
       <Flex justify="center" align="center" minH="200px">
@@ -938,15 +1353,22 @@ const Token: React.FC = () => {
               </Flex>
 
               <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
-                {token.price && (
+                {currentPrice !== null && (
                   <Stat>
-                    <StatLabel>Price</StatLabel>
-                    <StatNumber>
-                      {token.price
-                        ? `${Number(token.price).toFixed(6)} VOI`
-                        : "\u00A0"}
-                    </StatNumber>
-                    {token.change_24h?.percent_change && (
+                    <StatLabel>Current Price</StatLabel>
+                    <StatNumber>{(1 / currentPrice).toFixed(6)} VOI</StatNumber>
+                    {token.change_1h?.percent_change ? (
+                      <StatHelpText>
+                        <StatArrow
+                          type={
+                            token.change_1h.percent_change >= 0
+                              ? "increase"
+                              : "decrease"
+                          }
+                        />
+                        {token.change_1h.percent_change.toFixed(2)}% (24h)
+                      </StatHelpText>
+                    ) : token.change_24h?.percent_change ? (
                       <StatHelpText>
                         <StatArrow
                           type={
@@ -957,7 +1379,7 @@ const Token: React.FC = () => {
                         />
                         {token.change_24h.percent_change.toFixed(2)}% (24h)
                       </StatHelpText>
-                    )}
+                    ) : null}
                   </Stat>
                 )}
 
@@ -1020,15 +1442,17 @@ const Token: React.FC = () => {
                 if (index === 0) {
                   setCurrentHoldersPage(1);
                   fetchHolders(1);
-                } else {
+                } else if (index === 1) {
                   setCurrentTransfersPage(1);
                   fetchTransfers(1);
                 }
+                // No special action needed for Charts tab yet
               }}
             >
               <TabList mb={4} pb={4}>
                 <Tab>Top Holders</Tab>
                 <Tab>Transfers</Tab>
+                <Tab>Charts</Tab>
               </TabList>
 
               <TabPanels>
@@ -1254,6 +1678,327 @@ const Token: React.FC = () => {
                         </Button>
                       </Flex>
                     )}
+                  </Stack>
+                </TabPanel>
+
+                <TabPanel px={0}>
+                  <Stack spacing={4}>
+                    <Flex justify="space-between" wrap="wrap" gap={4}>
+                      <ButtonGroup size="sm" isAttached variant="outline">
+                        <Button
+                          onClick={() => setChartType("price")}
+                          colorScheme={chartType === "price" ? "blue" : "gray"}
+                        >
+                          Price
+                        </Button>
+                        <Button
+                          onClick={() => setChartType("tvl")}
+                          colorScheme={chartType === "tvl" ? "blue" : "gray"}
+                        >
+                          TVL
+                        </Button>
+                      </ButtonGroup>
+
+                      <ButtonGroup size="sm" isAttached variant="outline">
+                        {["1H", "24H", "7D", "30D"].map((range) => (
+                          <Button
+                            key={range}
+                            onClick={() => setTimeRange(range as any)}
+                            colorScheme={timeRange === range ? "blue" : "gray"}
+                          >
+                            {range}
+                          </Button>
+                        ))}
+                      </ButtonGroup>
+
+                      <ButtonGroup size="sm" spacing={2}>
+                        <Button
+                          onClick={() => setShowDataTable(!showDataTable)}
+                          variant="outline"
+                        >
+                          {showDataTable ? "Hide Data" : "Show Data"}
+                        </Button>
+                        <Button
+                          onClick={() => setShowHoldersTable(!showHoldersTable)}
+                          variant="outline"
+                        >
+                          {showHoldersTable ? "Hide Holders" : "Show Holders"}
+                        </Button>
+                      </ButtonGroup>
+                    </Flex>
+
+                    <Card>
+                      <CardBody>
+                        <Stack spacing={4}>
+                          <Flex
+                            justify="space-between"
+                            align="center"
+                            direction={{ base: "column", md: "row" }}
+                            gap={4}
+                          >
+                            <Heading size="md">
+                              {chartType === "price"
+                                ? "Price History"
+                                : "TVL History"}
+                            </Heading>
+                            <Flex
+                              gap={4}
+                              align="center"
+                              direction={{ base: "column", sm: "row" }}
+                              width={{ base: "100%", md: "auto" }}
+                            >
+                              <FormControl
+                                width={{ base: "100%", sm: "auto" }}
+                                minW={{ sm: "200px" }}
+                              >
+                                <InputGroup size="sm">
+                                  <InputLeftAddon
+                                    cursor="pointer"
+                                    onClick={() =>
+                                      setTvlCurrency((curr) =>
+                                        curr === "USDC" ? "VOI" : "USDC"
+                                      )
+                                    }
+                                    _hover={{
+                                      bg: useColorModeValue(
+                                        "gray.200",
+                                        "gray.600"
+                                      ),
+                                    }}
+                                  >
+                                    {tvlCurrency}
+                                  </InputLeftAddon>
+                                  <Select
+                                    value={selectedPool || ""}
+                                    onChange={(e) =>
+                                      setSelectedPool(Number(e.target.value))
+                                    }
+                                    placeholder="Select pool"
+                                    size="sm"
+                                  >
+                                    {pools.map((pool) => (
+                                      <option
+                                        key={pool.contractId}
+                                        value={pool.contractId}
+                                      >
+                                        {pool.symbolA}/{pool.symbolB} (TVL:{" "}
+                                        {tvlCurrency === "USDC" ? "$" : ""}
+                                        {formatLargeNumber(
+                                          tvlCurrency === "USDC"
+                                            ? pool.tvlUSDC
+                                            : pool.tvlVOI
+                                        )}{" "}
+                                        {tvlCurrency})
+                                      </option>
+                                    ))}
+                                  </Select>
+                                </InputGroup>
+                              </FormControl>
+                              {chartType === "price" && selectedPool && (
+                                <Button
+                                  size="sm"
+                                  onClick={() =>
+                                    setInvertedPrice(!invertedPrice)
+                                  }
+                                  variant="outline"
+                                  width={{ base: "100%", sm: "auto" }}
+                                >
+                                  {invertedPrice
+                                    ? `${
+                                        pools.find(
+                                          (p) => p.contractId === selectedPool
+                                        )?.symbolB
+                                      } / ${
+                                        pools.find(
+                                          (p) => p.contractId === selectedPool
+                                        )?.symbolA
+                                      }`
+                                    : `${
+                                        pools.find(
+                                          (p) => p.contractId === selectedPool
+                                        )?.symbolA
+                                      } / ${
+                                        pools.find(
+                                          (p) => p.contractId === selectedPool
+                                        )?.symbolB
+                                      }`}
+                                </Button>
+                              )}
+                            </Flex>
+                          </Flex>
+                          <Box
+                            height={{ base: "300px", md: "400px" }}
+                            width="100%"
+                            position="relative"
+                          >
+                            {chartLoading ? (
+                              <Center height="100%">
+                                <Spinner size="xl" />
+                              </Center>
+                            ) : (
+                              <Line
+                                data={priceData as any}
+                                options={{
+                                  responsive: true,
+                                  maintainAspectRatio: false,
+                                  plugins: {
+                                    legend: {
+                                      position: "top" as const,
+                                      display: legendDisplay,
+                                    },
+                                    title: {
+                                      display: false,
+                                    },
+                                    tooltip: {
+                                      callbacks: {
+                                        label: (context) => {
+                                          const value = context.raw as number;
+                                          if (chartType === "price") {
+                                            return `${
+                                              context.dataset.label
+                                            }: ${Number(value).toFixed(6)}`;
+                                          }
+                                          return `${
+                                            context.dataset.label
+                                          }: ${formatLargeNumber(value)}`;
+                                        },
+                                      },
+                                    },
+                                  },
+                                  scales: {
+                                    y: {
+                                      beginAtZero: false,
+                                      position: "left",
+                                      grid: {
+                                        display: true,
+                                        color: "rgba(0, 0, 0, 0.1)",
+                                      },
+                                      ticks: {
+                                        maxTicksLimit: yAxisTickLimit,
+                                        callback: (value) => {
+                                          if (chartType === "price") {
+                                            return Number(value) < 0.01
+                                              ? Number(value).toExponential(2)
+                                              : Number(value).toFixed(6);
+                                          }
+                                          return formatLargeNumber(
+                                            Number(value)
+                                          );
+                                        },
+                                      },
+                                    },
+                                    y1: {
+                                      position: "right",
+                                      grid: {
+                                        display: false,
+                                      },
+                                      ticks: {
+                                        maxTicksLimit: yAxisTickLimit,
+                                        callback: (value) =>
+                                          formatLargeNumber(Number(value)),
+                                      },
+                                    },
+                                    x: {
+                                      grid: {
+                                        display: false,
+                                      },
+                                      ticks: {
+                                        maxTicksLimit: xAxisTickLimit,
+                                        maxRotation: xAxisRotation,
+                                        callback: (value) => {
+                                          const date = new Date(Number(value));
+                                          return date.toLocaleTimeString([], {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          });
+                                        },
+                                      },
+                                    },
+                                  },
+                                  interaction: {
+                                    intersect: false,
+                                    mode: "index",
+                                  },
+                                  elements: {
+                                    line: {
+                                      tension: 0.4,
+                                    },
+                                  },
+                                }}
+                              />
+                            )}
+                          </Box>
+
+                          {showHoldersTable && (
+                            <Box overflowX="auto">
+                              <Flex
+                                justify="space-between"
+                                align="center"
+                                mb={4}
+                              >
+                                <Heading size="sm">Pool Holders</Heading>
+                                {poolHoldersLoading && <Spinner size="sm" />}
+                              </Flex>
+                              <Table variant="simple" size="sm">
+                                <Thead>
+                                  <Tr>
+                                    <Th>Rank</Th>
+                                    <Th>Address</Th>
+                                    <Th isNumeric>LP Balance</Th>
+                                    <Th isNumeric>Share</Th>
+                                  </Tr>
+                                </Thead>
+                                <Tbody>
+                                  {poolHolders.map((holder, index) => {
+                                    const totalSupply = poolHolders.reduce(
+                                      (sum, h) => sum + Number(h.balance),
+                                      0
+                                    );
+                                    const share = (
+                                      (Number(holder.balance) / totalSupply) *
+                                      100
+                                    ).toFixed(2);
+
+                                    return (
+                                      <Tr key={holder.accountId}>
+                                        <Td>#{index + 1}</Td>
+                                        <Td>
+                                          <Flex align="center" gap={2}>
+                                            <RouterLink
+                                              to={`/account/${holder.accountId}`}
+                                            >
+                                              <Text color="blue.500">
+                                                {formatAddress(
+                                                  holder.accountId
+                                                )}
+                                              </Text>
+                                            </RouterLink>
+                                            <IconButton
+                                              aria-label="Copy address"
+                                              icon={<CopyIcon />}
+                                              size="xs"
+                                              variant="ghost"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleCopy(holder.accountId);
+                                              }}
+                                            />
+                                          </Flex>
+                                        </Td>
+                                        <Td isNumeric>
+                                          {formatBalance(holder.balance, 6)}
+                                        </Td>
+                                        <Td isNumeric>{share}%</Td>
+                                      </Tr>
+                                    );
+                                  })}
+                                </Tbody>
+                              </Table>
+                            </Box>
+                          )}
+                        </Stack>
+                      </CardBody>
+                    </Card>
                   </Stack>
                 </TabPanel>
               </TabPanels>
