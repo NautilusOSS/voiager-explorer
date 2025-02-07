@@ -229,7 +229,7 @@ const Token: React.FC = () => {
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [showDataTable, setShowDataTable] = useState(false);
   const [showHoldersTable, setShowHoldersTable] = useState(false);
-  const [, setSwapData] = useState<any[]>([]);
+  const [swapData, setSwapData] = useState<any[]>([]);
   const [timeRange, setTimeRange] = useState<"1H" | "24H" | "7D" | "30D">("7D");
   const [chartLoading, setChartLoading] = useState(false);
   const [poolHolders, setPoolHolders] = useState<TokenHolder[]>([]);
@@ -1730,7 +1730,13 @@ const Token: React.FC = () => {
                     </Flex>
 
                     <Card>
-                      <CardBody>
+                      <CardBody
+                        bgGradient={useColorModeValue(
+                          "linear(to-br, gray.50, white, gray.50)",
+                          "linear(to-br, gray.800, gray.900, gray.800)"
+                        )}
+                        borderRadius="lg"
+                      >
                         <Stack spacing={4}>
                           <Flex
                             justify="space-between"
@@ -1838,98 +1844,213 @@ const Token: React.FC = () => {
                                 <Spinner size="xl" />
                               </Center>
                             ) : (
-                              <Line
-                                data={priceData as any}
-                                options={{
-                                  responsive: true,
-                                  maintainAspectRatio: false,
-                                  plugins: {
-                                    legend: {
-                                      position: "top" as const,
-                                      display: legendDisplay,
-                                    },
-                                    title: {
-                                      display: false,
-                                    },
-                                    tooltip: {
-                                      callbacks: {
-                                        label: (context) => {
-                                          const value = context.raw as number;
-                                          if (chartType === "price") {
+                              <>
+                                <Line
+                                  data={priceData as any}
+                                  options={{
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                      legend: {
+                                        position: "top" as const,
+                                        display: legendDisplay,
+                                      },
+                                      title: {
+                                        display: false,
+                                      },
+                                      tooltip: {
+                                        callbacks: {
+                                          label: (context) => {
+                                            const value = context.raw as number;
+                                            if (chartType === "price") {
+                                              return `${
+                                                context.dataset.label
+                                              }: ${Number(value).toFixed(6)}`;
+                                            }
                                             return `${
                                               context.dataset.label
-                                            }: ${Number(value).toFixed(6)}`;
-                                          }
-                                          return `${
-                                            context.dataset.label
-                                          }: ${formatLargeNumber(value)}`;
+                                            }: ${formatLargeNumber(value)}`;
+                                          },
                                         },
                                       },
                                     },
-                                  },
-                                  scales: {
-                                    y: {
-                                      beginAtZero: false,
-                                      position: "left",
-                                      grid: {
-                                        display: true,
-                                        color: "rgba(0, 0, 0, 0.1)",
+                                    scales: {
+                                      y: {
+                                        beginAtZero: false,
+                                        position: "left",
+                                        grid: {
+                                          display: true,
+                                          color: "rgba(0, 0, 0, 0.1)",
+                                        },
+                                        ticks: {
+                                          maxTicksLimit: yAxisTickLimit,
+                                          callback: (value) => {
+                                            if (chartType === "price") {
+                                              return Number(value) < 0.01
+                                                ? Number(value).toExponential(2)
+                                                : Number(value).toFixed(6);
+                                            }
+                                            return formatLargeNumber(Number(value));
+                                          },
+                                        },
                                       },
-                                      ticks: {
-                                        maxTicksLimit: yAxisTickLimit,
-                                        callback: (value) => {
-                                          if (chartType === "price") {
-                                            return Number(value) < 0.01
-                                              ? Number(value).toExponential(2)
-                                              : Number(value).toFixed(6);
-                                          }
-                                          return formatLargeNumber(
-                                            Number(value)
-                                          );
+                                      y1: {
+                                        position: "right",
+                                        grid: {
+                                          display: false,
+                                        },
+                                        ticks: {
+                                          maxTicksLimit: yAxisTickLimit,
+                                          callback: (value) =>
+                                            formatLargeNumber(Number(value)),
+                                        },
+                                      },
+                                      x: {
+                                        grid: {
+                                          display: false,
+                                        },
+                                        ticks: {
+                                          maxTicksLimit: xAxisTickLimit,
+                                          maxRotation: xAxisRotation,
+                                          callback: (value) => {
+                                            const date = new Date(Number(value));
+                                            return date.toLocaleTimeString([], {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            });
+                                          },
                                         },
                                       },
                                     },
-                                    y1: {
-                                      position: "right",
-                                      grid: {
-                                        display: false,
-                                      },
-                                      ticks: {
-                                        maxTicksLimit: yAxisTickLimit,
-                                        callback: (value) =>
-                                          formatLargeNumber(Number(value)),
+                                    interaction: {
+                                      intersect: false,
+                                      mode: "index",
+                                    },
+                                    elements: {
+                                      line: {
+                                        tension: 0.4,
                                       },
                                     },
-                                    x: {
-                                      grid: {
-                                        display: false,
-                                      },
-                                      ticks: {
-                                        maxTicksLimit: xAxisTickLimit,
-                                        maxRotation: xAxisRotation,
-                                        callback: (value) => {
-                                          const date = new Date(Number(value));
-                                          return date.toLocaleTimeString([], {
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                          });
-                                        },
-                                      },
-                                    },
-                                  },
-                                  interaction: {
-                                    intersect: false,
-                                    mode: "index",
-                                  },
-                                  elements: {
-                                    line: {
-                                      tension: 0.4,
-                                    },
-                                  },
-                                }}
-                              />
+                                  }}
+                                />
+                                <Box
+                                  position="absolute"
+                                  bottom="8px"
+                                  right="8px"
+                                  bg={useColorModeValue("purple.600", "gray.800")}
+                                  p={1}
+                                  borderRadius="md"
+                                  display="flex"
+                                  alignItems="center"
+                                  as="a"
+                                  href={`https://voi.humble.sh/#/swap?poolId=${selectedPool || ''}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  cursor="pointer"
+                                  _hover={{ opacity: 0.8 }}
+                                >
+                                  <Image
+                                    src="https://voi.humble.sh/logo.png"
+                                    alt="Humble"
+                                    height="24px"
+                                    title="Available on Humble"
+                                  />
+                                </Box>
+                              </>
                             )}
                           </Box>
+
+                          {showDataTable && (
+                            <Box overflowX="auto">
+                              <Table variant="simple" size="sm">
+                                <Thead>
+                                  <Tr>
+                                    <Th>Time</Th>
+                                    <Th>Type</Th>
+                                    <Th>Transaction</Th>
+                                    <Th isNumeric>In</Th>
+                                    <Th isNumeric>Out</Th>
+                                    <Th isNumeric>Price</Th>
+                                  </Tr>
+                                </Thead>
+                                <Tbody>
+                                  {swapData.map((swap) => {
+                                    const isAtoB = Number(swap.inBalA) > 0;
+                                    const inAmount = isAtoB
+                                      ? Number(swap.inBalA)
+                                      : Number(swap.inBalB);
+                                    const outAmount = isAtoB
+                                      ? Number(swap.outBalB)
+                                      : Number(swap.outBalA);
+                                    const selectedPool = pools.find(
+                                      (p) => p.contractId === swap.contractId
+                                    );
+
+                                    // Determine units based on swap direction
+                                    const inUnit = isAtoB
+                                      ? selectedPool?.symbolA
+                                      : selectedPool?.symbolB;
+                                    const outUnit = isAtoB
+                                      ? selectedPool?.symbolB
+                                      : selectedPool?.symbolA;
+
+                                    return (
+                                      <Tr key={swap.transactionId}>
+                                        <Td>
+                                          {new Date(
+                                            swap.timestamp * 1000
+                                          ).toLocaleString()}
+                                        </Td>
+                                        <Td>
+                                          <Badge
+                                            colorScheme={
+                                              isAtoB ? "green" : "red"
+                                            }
+                                          >
+                                            {isAtoB
+                                              ? `${selectedPool?.symbolA} → ${selectedPool?.symbolB}`
+                                              : `${selectedPool?.symbolB} → ${selectedPool?.symbolA}`}
+                                          </Badge>
+                                        </Td>
+                                        <Td>
+                                          <Flex align="center" gap={2}>
+                                            <RouterLink
+                                              to={`/transaction/${swap.transactionId}`}
+                                            >
+                                              <Text color="blue.500">
+                                                {formatAddress(
+                                                  swap.transactionId
+                                                )}
+                                              </Text>
+                                            </RouterLink>
+                                            <IconButton
+                                              aria-label="Copy transaction ID"
+                                              icon={<CopyIcon />}
+                                              size="xs"
+                                              variant="ghost"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleCopy(swap.transactionId);
+                                              }}
+                                            />
+                                          </Flex>
+                                        </Td>
+                                        <Td isNumeric>
+                                          {inAmount.toFixed(6)} {inUnit}
+                                        </Td>
+                                        <Td isNumeric>
+                                          {outAmount.toFixed(6)} {outUnit}
+                                        </Td>
+                                        <Td isNumeric>
+                                          {Number(swap.price).toFixed(6)}
+                                        </Td>
+                                      </Tr>
+                                    );
+                                  })}
+                                </Tbody>
+                              </Table>
+                            </Box>
+                          )}
 
                           {showHoldersTable && (
                             <Box overflowX="auto">
