@@ -58,7 +58,7 @@ import {
 } from "@chakra-ui/icons";
 import { useToast } from "@chakra-ui/react";
 import algosdk from "algosdk";
-import { Line } from "react-chartjs-2";
+import { Line, Scatter } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -70,7 +70,14 @@ import {
   Legend,
   BarElement,
   BarController,
+  TimeScale,
 } from "chart.js";
+import {
+  CandlestickController,
+  CandlestickElement,
+} from "chartjs-chart-financial";
+import "chartjs-adapter-date-fns";
+import { enUS } from "date-fns/locale";
 
 ChartJS.register(
   CategoryScale,
@@ -81,7 +88,10 @@ ChartJS.register(
   Tooltip,
   Legend,
   BarElement,
-  BarController
+  BarController,
+  CandlestickController,
+  CandlestickElement,
+  TimeScale
 );
 
 interface TokenPrice {
@@ -193,6 +203,13 @@ const Token: React.FC = () => {
       yAxisID?: string;
       order?: number;
       type?: string;
+      barPercentage?: number;
+      categoryPercentage?: number;
+      segment?: {
+        borderColor: (context: any) => string;
+      };
+      borderJoinStyle?: string;
+      borderCapStyle?: string;
     }[];
   }>({
     labels: [],
@@ -201,10 +218,10 @@ const Token: React.FC = () => {
         label: "Price (USDC)",
         data: [],
         borderColor: "rgb(75, 192, 192)",
-        tension: 0.8,
+        tension: 1,
         fill: true,
         backgroundColor: "rgba(75, 192, 192, 0.1)",
-        pointRadius: 0,
+        pointRadius: 1,
         pointHoverRadius: 4,
         borderWidth: 2,
         yAxisID: "y",
@@ -234,6 +251,7 @@ const Token: React.FC = () => {
   const [chartLoading, setChartLoading] = useState(false);
   const [poolHolders, setPoolHolders] = useState<TokenHolder[]>([]);
   const [poolHoldersLoading, setPoolHoldersLoading] = useState(false);
+  const [chartStyle, setChartStyle] = useState<"line" | "candle">("candle");
 
   // Move breakpoint values to component level
   const legendDisplay = useBreakpointValue({ base: false, sm: true });
@@ -406,21 +424,28 @@ const Token: React.FC = () => {
   }, [searchQuery, holders]);
 
   const calculatePoolTVL = (pool: Pool) => {
-    console.log({ pool, token });
+    if (!pool || !token) return 0;
+
+    const poolBalA = Number(pool.poolBalA); // Math.pow(10, pool.tokADecimals);
+    const poolBalB = Number(pool.poolBalB); // Math.pow(10, pool.tokBDecimals);
+
+    // If either token is VOI
     if (pool.symbolA === "VOI") {
-      return Number(pool.tvlA) * 2;
+      return poolBalA * 2;
     }
     if (pool.symbolB === "VOI") {
-      return Number(pool.tvlB) * 2;
+      return poolBalB * 2;
     }
-    // either pool symbolA and symbolB are the token
-    if (pool.symbolA === token?.symbol) {
-      return Number(pool.tvlA) * (currentPrice ?? 1) * 2;
+
+    // If the token we're viewing is in the pool
+    if (pool.symbolA === token.symbol) {
+      return poolBalA * (currentPrice ?? 1) * 2;
     }
-    if (pool.symbolB === token?.symbol) {
-      return Number(pool.tvlB) * (currentPrice ?? 1) * 2;
+    if (pool.symbolB === token.symbol) {
+      return poolBalB * (currentPrice ?? 1) * 2;
     }
-    return 1;
+
+    return 0;
   };
 
   useEffect(() => {
@@ -494,6 +519,37 @@ const Token: React.FC = () => {
     }
   };
 
+  const aggregateVolumeData = (swaps: any[], timeRange: string) => {
+    const bucketSize =
+      timeRange === "1H"
+        ? 60 // 1 minute
+        : timeRange === "24H"
+        ? 900 // 15 minutes
+        : timeRange === "7D"
+        ? 3600 // 1 hour
+        : 14400; // 4 hours for 30D
+
+    const volumeBuckets = new Map();
+
+    swaps.forEach((swap) => {
+      const bucketTime =
+        Math.floor(swap.timestamp / bucketSize) * bucketSize * 1000;
+      const isAtoB = Number(swap.inBalA) > 0;
+      const volume = isAtoB ? Number(swap.inBalA) : Number(swap.inBalB);
+
+      if (volumeBuckets.has(bucketTime)) {
+        volumeBuckets.set(bucketTime, volumeBuckets.get(bucketTime) + volume);
+      } else {
+        volumeBuckets.set(bucketTime, volume);
+      }
+    });
+
+    return Array.from(volumeBuckets.entries()).map(([time, volume]) => ({
+      x: time,
+      y: volume,
+    }));
+  };
+
   const fetchPriceData = async () => {
     if (!selectedPool) return;
 
@@ -511,90 +567,207 @@ const Token: React.FC = () => {
       const recentSwaps = data.swaps.slice(0).reverse();
       setSwapData(recentSwaps.slice().reverse());
 
-      if (chartType === "price") {
+      if (chartType === "tvl") {
+        const bucketSize =
+          timeRange === "1H"
+            ? 60
+            : timeRange === "24H"
+            ? 900
+            : timeRange === "7D"
+            ? 3600
+            : 14400;
+        const tvlBuckets = new Map();
+        let lastValidTvl = null;
+
+        // First pass: Calculate TVL for each swap
+        recentSwaps.forEach((swap) => {
+          const bucketTime =
+            Math.floor(swap.timestamp / bucketSize) * bucketSize * 1000;
+          const selectedPoolData = pools.find(
+            (p) => p.contractId === selectedPool
+          );
+
+          if (selectedPoolData) {
+            // Adjust pool balances using correct decimals
+            const poolBalA =
+              Number(swap.poolBalA) /
+              Math.pow(10, selectedPoolData.tokADecimals);
+            const poolBalB =
+              Number(swap.poolBalB) /
+              Math.pow(10, selectedPoolData.tokBDecimals);
+
+            let tvl;
+            // If either token is VOI
+            if (selectedPoolData.symbolA === "VOI") {
+              tvl = poolBalA * 2; // Double the VOI amount for TVL
+            } else if (selectedPoolData.symbolB === "VOI") {
+              tvl = poolBalB * 2;
+            } else {
+              // If neither token is VOI, use the token price if available
+              tvl = (poolBalA + poolBalB) * (currentPrice ?? 1);
+            }
+
+            // Convert to USDC if needed
+            const finalTvl =
+              tvlCurrency === "USDC"
+                ? tvl *
+                  (usdcPool
+                    ? Number(usdcPool.poolBalA) / Number(usdcPool.poolBalB)
+                    : 1)
+                : tvl;
+
+            tvlBuckets.set(bucketTime, finalTvl * 1000000); // Multiply by 1M to get actual value
+            lastValidTvl = finalTvl * 1000000;
+          }
+        });
+
+        // Second pass: Fill gaps between data points
+        if (lastValidTvl !== null) {
+          const times = Array.from(tvlBuckets.keys()).sort((a, b) => a - b);
+          for (let i = 0; i < times.length - 1; i++) {
+            const currentTime = times[i];
+            const nextTime = times[i + 1];
+
+            // Fill gaps between data points
+            for (
+              let t = currentTime + bucketSize * 1000;
+              t < nextTime;
+              t += bucketSize * 1000
+            ) {
+              tvlBuckets.set(t, tvlBuckets.get(currentTime));
+            }
+          }
+        }
+
+        // Convert to arrays and sort by time
+        const tvlData = Array.from(tvlBuckets.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([time, value]) => ({
+            x: time,
+            y: value,
+          }));
+
+        setPriceData({
+          labels: tvlData.map((point) => point.x),
+          datasets: [
+            {
+              type: "line",
+              label: `TVL (${tvlCurrency})`,
+              data: tvlData,
+              borderColor: "rgb(75, 192, 192)",
+              backgroundColor: "rgba(75, 192, 192, 0.1)",
+              fill: true,
+              tension: 0.4,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              borderWidth: 2,
+              yAxisID: "y",
+            },
+          ],
+        });
+
+        // Update chart options to hide y1 axis for TVL view
+        chartOptions.scales.y1.display = false;
+      } else {
         const validSwaps = recentSwaps.filter(
           (swap: any) =>
             typeof swap.price === "number" ||
             (typeof swap.price === "string" && !isNaN(Number(swap.price)))
         );
 
-        // Calculate volume for each swap
-        const volumes = validSwaps.map((swap: any) => {
-          const volume = Number(swap.inBalA || swap.inBalB);
-          return volume;
-        });
+        if (chartStyle === "line") {
+          const prices = validSwaps.map((swap: any) => ({
+            x: swap.timestamp * 1000,
+            y: invertedPrice ? 1 / Number(swap.price) : Number(swap.price),
+          }));
 
-        setPriceData({
-          labels: validSwaps.map((swap: any) => swap.timestamp * 1000),
-          datasets: [
-            {
-              label: invertedPrice
-                ? `Price (${
-                    pools.find((p) => p.contractId === selectedPool)?.symbolB
-                  }/${
-                    pools.find((p) => p.contractId === selectedPool)?.symbolA
-                  })`
-                : `Price (${
-                    pools.find((p) => p.contractId === selectedPool)?.symbolA
-                  }/${
-                    pools.find((p) => p.contractId === selectedPool)?.symbolB
-                  })`,
-              data: validSwaps.map((swap: any) =>
-                invertedPrice ? 1 / Number(swap.price) : Number(swap.price)
-              ),
-              borderColor: "rgb(75, 192, 192)",
-              tension: 0.4,
-              fill: true,
-              backgroundColor: "rgba(75, 192, 192, 0.1)",
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              borderWidth: 2,
-              yAxisID: "y",
-              order: 0,
-            },
-            {
-              type: "bar",
-              label: "Volume",
-              data: volumes,
-              backgroundColor: "rgba(128, 128, 128, 0.2)",
-              yAxisID: "y1",
-              order: 1,
-            },
-          ],
-        });
-      } else {
-        const voiPrice = usdcPool
-          ? Number(usdcPool.poolBalA) / Number(usdcPool.poolBalB)
-          : 1;
+          // Use aggregated volumes instead of raw data
+          const volumes = aggregateVolumeData(validSwaps, timeRange);
 
-        const tvlHistory = recentSwaps.map((swap: any) => {
-          const totalTvl = calculatePoolTVL({
-            ...pools.find((p) => p.contractId === selectedPool)!,
-            tvlA: swap.poolBalA,
-            tvlB: swap.poolBalB,
+          setPriceData({
+            labels: validSwaps.map((swap: any) => swap.timestamp * 1000),
+            datasets: [
+              {
+                label: invertedPrice
+                  ? `Price (${
+                      pools.find((p) => p.contractId === selectedPool)?.symbolB
+                    }/${
+                      pools.find((p) => p.contractId === selectedPool)?.symbolA
+                    })`
+                  : `Price (${
+                      pools.find((p) => p.contractId === selectedPool)?.symbolA
+                    }/${
+                      pools.find((p) => p.contractId === selectedPool)?.symbolB
+                    })`,
+                data: prices,
+                borderColor: "rgb(75, 192, 192)",
+                tension: 0.6,
+                fill: true,
+                backgroundColor: "rgba(75, 192, 192, 0.1)",
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                borderWidth: 2,
+                yAxisID: "y",
+                order: 0,
+                cubicInterpolationMode: "monotone",
+                spanGaps: true,
+                segment: {
+                  borderColor: (ctx) => "rgb(75, 192, 192)",
+                },
+                borderJoinStyle: "round",
+                borderCapStyle: "round",
+              },
+              {
+                type: "bar",
+                label: "Volume",
+                data: volumes,
+                backgroundColor: "rgba(128, 128, 128, 0.2)",
+                yAxisID: "y1",
+                order: 1,
+                barPercentage: 0.9,
+                categoryPercentage: 0.9,
+              },
+            ],
           });
-
-          return tvlCurrency === "VOI" ? totalTvl : totalTvl * voiPrice;
-        });
-
-        setPriceData({
-          labels: recentSwaps.map((swap: any) => swap.timestamp * 1000),
-          datasets: [
-            {
-              label: `TVL (${tvlCurrency})`,
-              data: tvlHistory,
-              borderColor: "rgb(75, 192, 192)",
-              tension: 0.4,
-              fill: true,
-              backgroundColor: "rgba(75, 192, 192, 0.1)",
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              borderWidth: 2,
-              yAxisID: "y",
-              order: 0,
-            },
-          ],
-        });
+        } else {
+          // Handle candlestick data
+          const candleData = generateCandleData(validSwaps);
+          setPriceData({
+            labels: candleData.map((candle) => candle.x),
+            datasets: [
+              {
+                label: invertedPrice
+                  ? `Price (${
+                      pools.find((p) => p.contractId === selectedPool)?.symbolB
+                    }/${
+                      pools.find((p) => p.contractId === selectedPool)?.symbolA
+                    })`
+                  : `Price (${
+                      pools.find((p) => p.contractId === selectedPool)?.symbolA
+                    }/${
+                      pools.find((p) => p.contractId === selectedPool)?.symbolB
+                    })`,
+                data: candleData,
+                type: "candlestick",
+                yAxisID: "y",
+              },
+              {
+                type: "bar",
+                label: "Volume",
+                data: candleData.map((candle) => ({
+                  x: candle.x,
+                  y: Number(candle.v) * 0.1,
+                })),
+                backgroundColor: "rgba(128, 128, 128, 0.2)",
+                yAxisID: "y1",
+                order: 1,
+                barPercentage: 0.3,
+                categoryPercentage: 0.8,
+              },
+            ],
+          });
+        }
+        chartOptions.scales.y1.display = true; // Show y1 axis for price view
       }
     } catch (error) {
       console.error("Error fetching price data:", error);
@@ -620,11 +793,29 @@ const Token: React.FC = () => {
     } finally {
       setChartLoading(false);
     }
+
+    // Update chart options to use formatLargeNumber for y-axis
+    chartOptions.scales.y.ticks.callback = (value: any) => {
+      if (chartType === "price") {
+        return Number(value) < 0.01
+          ? Number(value).toExponential(2)
+          : Number(value).toFixed(6);
+      }
+      return formatLargeNumber(Number(value));
+    };
   };
 
   useEffect(() => {
     fetchPriceData();
-  }, [selectedPool, pools, invertedPrice, chartType, tvlCurrency, timeRange]);
+  }, [
+    selectedPool,
+    pools,
+    invertedPrice,
+    chartType,
+    tvlCurrency,
+    timeRange,
+    chartStyle,
+  ]);
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -1304,6 +1495,428 @@ const Token: React.FC = () => {
     }
   }, [selectedPool, showHoldersTable]);
 
+  // Update the generateCandleData function
+  const generateCandleData = (swaps: any[]) => {
+    const candlePeriod =
+      timeRange === "1H"
+        ? 60 // 1 minute candles
+        : timeRange === "24H"
+        ? 900 // 15 minute candles
+        : timeRange === "7D"
+        ? 3600 // 1 hour candles
+        : 14400; // 4 hour candles for 30D
+
+    const candleMap = new Map();
+
+    // Get the time range
+    const firstSwap = swaps[0];
+    const lastSwap = swaps[swaps.length - 1];
+
+    if (!firstSwap || !lastSwap) return [];
+
+    // Generate all possible candle timestamps
+    const startTime =
+      Math.floor(firstSwap.timestamp / candlePeriod) * candlePeriod * 1000;
+    const endTime =
+      Math.ceil(lastSwap.timestamp / candlePeriod) * candlePeriod * 1000;
+
+    // Initialize all candles in the time range
+    for (let time = startTime; time <= endTime; time += candlePeriod * 1000) {
+      candleMap.set(time, {
+        x: time,
+        o: null,
+        h: null,
+        l: null,
+        c: null,
+        v: 0,
+      });
+    }
+
+    // Fill in actual swap data
+    swaps.forEach((swap) => {
+      const candleTime =
+        Math.floor(swap.timestamp / candlePeriod) * candlePeriod * 1000;
+      const price = invertedPrice ? 1 / Number(swap.price) : Number(swap.price);
+      const volume = Number(swap.inBalA || swap.inBalB);
+
+      const candle = candleMap.get(candleTime);
+      if (candle) {
+        if (candle.o === null) {
+          candle.o = price;
+          candle.h = price;
+          candle.l = price;
+          candle.c = price;
+        } else {
+          candle.h = Math.max(candle.h, price);
+          candle.l = Math.min(candle.l, price);
+          candle.c = price;
+        }
+        candle.v += volume;
+      }
+    });
+
+    // Convert to array and fill gaps
+    const candleArray = Array.from(candleMap.values());
+    let lastValidPrice = null;
+
+    for (let i = 0; i < candleArray.length; i++) {
+      if (candleArray[i].o === null) {
+        // If this is an empty candle, use the last valid price
+        if (lastValidPrice !== null) {
+          candleArray[i].o = lastValidPrice;
+          candleArray[i].h = lastValidPrice;
+          candleArray[i].l = lastValidPrice;
+          candleArray[i].c = lastValidPrice;
+        }
+      } else {
+        lastValidPrice = candleArray[i].c;
+      }
+    }
+
+    return candleArray.filter((candle) => candle.o !== null);
+  };
+
+  // Calculate suggested range based on data
+  const getYAxisRange = (datasets: any[]) => {
+    if (chartStyle === "candle") {
+      const padding = 0.1;
+      const allPrices = datasets[0].data.flatMap((candle: any) => [
+        candle.h,
+        candle.l,
+      ]);
+      const min = Math.min(...allPrices);
+      const max = Math.max(...allPrices);
+      const range = max - min;
+      return {
+        suggestedMin: Math.max(0, min - range * padding),
+        suggestedMax: max + range * padding,
+      };
+    } else {
+      // For line charts, calculate a tighter range
+      const prices = datasets[0].data.map((point: any) => point.y);
+      const min = Math.min(...prices);
+      const max = Math.max(...prices);
+      const range = max - min;
+      const padding = range * 0.05; // Reduce padding to 5% (from 10%)
+
+      return {
+        suggestedMin: Math.max(0, min - padding),
+        suggestedMax: max + padding,
+      };
+    }
+  };
+
+  // Update chart options when data changes
+  useEffect(() => {
+    if (priceData.datasets[0]?.data.length) {
+      const range = getYAxisRange(priceData.datasets);
+      chartOptions.scales.y.min = range.suggestedMin;
+      chartOptions.scales.y.max = range.suggestedMax;
+    }
+  }, [priceData, chartStyle]); // Added chartStyle as dependency
+
+  // Update the chart options
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: "top" as const,
+        display: legendDisplay,
+      },
+      title: {
+        display: false,
+      },
+      tooltip: {
+        enabled: false,
+        external: function (context: any) {
+          // Get tooltip element
+          const tooltipEl = document.getElementById("chartjs-tooltip");
+
+          // Create tooltip if it doesn't exist
+          if (!tooltipEl) {
+            const div = document.createElement("div");
+            div.id = "chartjs-tooltip";
+            div.style.position = "absolute";
+            div.style.padding = "8px";
+            div.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+            div.style.borderRadius = "4px";
+            div.style.color = "white";
+            div.style.fontSize = "12px";
+            div.style.pointerEvents = "none";
+            context.chart.canvas.parentNode.appendChild(div);
+          }
+
+          // Hide if no tooltip
+          if (context.tooltip.opacity === 0) {
+            tooltipEl!.style.opacity = "0";
+            return;
+          }
+
+          // Set position
+          tooltipEl!.style.left = "8px";
+          tooltipEl!.style.top = "8px";
+          tooltipEl!.style.opacity = "1";
+
+          // Set text
+          if (context.tooltip.dataPoints) {
+            const dataPoint = context.tooltip.dataPoints[0];
+            const selectedPoolData = pools.find(
+              (p) => p.contractId === selectedPool
+            );
+            const poolSymbols = selectedPoolData
+              ? `${selectedPoolData.symbolA}/${selectedPoolData.symbolB}`
+              : "";
+
+            if (chartType === "tvl") {
+              // TVL chart tooltip
+              tooltipEl!.innerHTML = `
+                <div>
+                  <div>${poolSymbols} - ${new Date(
+                dataPoint.raw.x
+              ).toLocaleString()}</div>
+                  <div>TVL: ${
+                    tvlCurrency === "USDC" ? "$" : ""
+                  }${formatLargeNumber(dataPoint.raw.y)} ${tvlCurrency}</div>
+                </div>
+              `;
+            } else if (chartStyle === "candle") {
+              // Existing candlestick tooltip
+              const candleData = dataPoint.raw;
+              const volumeData = context.tooltip.dataPoints[1]?.raw?.y;
+              const isUp = Number(candleData.c) >= Number(candleData.o);
+              const candleColor = isUp
+                ? "rgb(75, 192, 192)"
+                : "rgb(255, 99, 132)";
+
+              tooltipEl!.innerHTML = `
+                <div>
+                  <div>${poolSymbols} - ${new Date(
+                candleData.x
+              ).toLocaleString()}</div>
+                  <div>O<span style="color: ${candleColor}">${Number(
+                candleData.o
+              ).toFixed(
+                6
+              )}</span> | H<span style="color: ${candleColor}">${Number(
+                candleData.h
+              ).toFixed(
+                6
+              )}</span> | L<span style="color: ${candleColor}">${Number(
+                candleData.l
+              ).toFixed(
+                6
+              )}</span> | C<span style="color: ${candleColor}">${Number(
+                candleData.c
+              ).toFixed(6)}</span></div>
+                  ${
+                    volumeData
+                      ? `<div>Vol <span style="color: ${candleColor}">${formatLargeNumber(
+                          volumeData
+                        )}</span></div>`
+                      : ""
+                  }
+                </div>
+              `;
+            } else {
+              // Existing line chart tooltip
+              const price = dataPoint.raw.y;
+              const volumeData = context.tooltip.dataPoints[1]?.raw?.y;
+              const volumeColor = "rgba(128, 128, 128, 1)";
+
+              tooltipEl!.innerHTML = `
+                <div>
+                  <div>${poolSymbols} - ${new Date(
+                dataPoint.raw.x
+              ).toLocaleString()}</div>
+                  <div>Price: ${Number(price).toFixed(6)}</div>
+                  ${
+                    volumeData
+                      ? `<div>Vol <span style="color: ${volumeColor}">${formatLargeNumber(
+                          volumeData
+                        )}</span></div>`
+                      : ""
+                  }
+                </div>
+              `;
+            }
+          }
+        },
+      },
+      decimation: {
+        enabled: true,
+        algorithm: "min-max",
+        samples: 200, // Increased sample size for smoother curves
+      },
+    },
+    scales: {
+      y: {
+        position: "left",
+        grid: {
+          display: true,
+          color: "rgba(0, 0, 0, 0.1)", // Simplified - removed conditional color
+          lineWidth: 1, // Simplified - removed conditional width
+          drawTicks: true,
+          borderDash: [], // Simplified - removed conditional dash
+        },
+        ticks: {
+          maxTicksLimit: yAxisTickLimit,
+          callback: (value: any) => {
+            if (chartType === "price") {
+              return Number(value) < 0.01
+                ? Number(value).toExponential(2)
+                : Number(value).toFixed(6);
+            }
+            return formatLargeNumber(Number(value));
+          },
+        },
+        min: 0,
+        max: undefined,
+        suggestedMin: 0,
+        suggestedMax: undefined,
+        weight: 100,
+        border: {
+          display: true,
+        },
+        beginAtZero: false, // Allow the scale to start at the minimum value
+        grace: "5%", // Add small grace percentage for better visibility
+      },
+      y1: {
+        position: "right",
+        grid: {
+          display: false,
+        },
+        ticks: {
+          maxTicksLimit: yAxisTickLimit,
+          callback: (value: any) => formatLargeNumber(Number(value)),
+        },
+        beginAtZero: true,
+        weight: 1,
+      },
+      x: {
+        type: "time",
+        time: {
+          unit:
+            timeRange === "1H"
+              ? "minute"
+              : timeRange === "24H"
+              ? "hour"
+              : "day",
+          displayFormats: {
+            minute: "HH:mm",
+            hour: "HH:mm",
+            day: "MMM d",
+          },
+          tooltipFormat: "PPpp", // Add this for better tooltip time formatting
+        },
+        adapters: {
+          date: {
+            locale: enUS, // Make sure to import from date-fns
+          },
+        },
+        grid: {
+          display: true,
+          color: "rgba(0, 0, 0, 0.1)",
+          lineWidth: 1,
+        },
+        ticks: {
+          maxTicksLimit: xAxisTickLimit,
+          maxRotation: xAxisRotation,
+          source: "auto",
+          autoSkip: true,
+        },
+        offset: false, // Set to false for line charts
+      },
+    },
+    layout: {
+      padding: {
+        top: 10, // Reduce from 20
+        bottom: 0,
+        left: 0, // Add left padding
+        right: 10, // Add right padding for y-axis labels
+      },
+    },
+    interaction: {
+      intersect: false,
+      mode: "nearest",
+      axis: "x",
+    },
+    hover: {
+      mode: "index",
+      intersect: false,
+    },
+    elements: {
+      candlestick: {
+        color: {
+          up: "rgba(75, 192, 192, 1)",
+          down: "rgba(255, 99, 132, 1)",
+          unchanged: "rgba(75, 192, 192, 1)", // Changed from gray to green
+        },
+        borderColor: {
+          up: "rgba(75, 192, 192, 1)",
+          down: "rgba(255, 99, 132, 1)",
+          unchanged: "rgba(75, 192, 192, 1)", // Changed from gray to green
+        },
+        wick: {
+          color: {
+            up: "rgba(75, 192, 192, 1)",
+            down: "rgba(255, 99, 132, 1)",
+            unchanged: "rgba(75, 192, 192, 1)", // Changed from gray to green
+          },
+        },
+      },
+      line: {
+        tension: 0.6, // Match dataset tension
+        cubicInterpolationMode: "monotone",
+        stepped: false,
+        borderJoinStyle: "round",
+        borderCapStyle: "round",
+      },
+    },
+    animations: {
+      tension: {
+        duration: 1000,
+        easing: "linear",
+        from: 0.8,
+        to: 0.6,
+        loop: false,
+      },
+    },
+  };
+
+  // Add cleanup for tooltip element when component unmounts
+  useEffect(() => {
+    return () => {
+      const tooltipEl = document.getElementById("chartjs-tooltip");
+      if (tooltipEl) {
+        tooltipEl.remove();
+      }
+    };
+  }, []);
+
+  // Add new effect to handle initial pool selection and data fetch
+  useEffect(() => {
+    if (pools.length > 0 && !selectedPool) {
+      setSelectedPool(pools[0].contractId);
+      // No need to call fetchPriceData here as it will be triggered by the selectedPool change
+    }
+  }, [pools, selectedPool]);
+
+  // Update the tab change handler
+  const handleTabChange = (index: number) => {
+    setActiveTab(index);
+    if (index === 0) {
+      setCurrentHoldersPage(1);
+      fetchHolders(1);
+    } else if (index === 1) {
+      setCurrentTransfersPage(1);
+      fetchTransfers(1);
+    } else if (index === 2 && selectedPool) {
+      // Explicitly fetch price data when switching to chart tab
+      fetchPriceData();
+    }
+  };
+
   if (loading) {
     return (
       <Flex justify="center" align="center" minH="200px">
@@ -1438,19 +2051,7 @@ const Token: React.FC = () => {
 
         <Card>
           <CardBody>
-            <Tabs
-              onChange={(index) => {
-                setActiveTab(index);
-                if (index === 0) {
-                  setCurrentHoldersPage(1);
-                  fetchHolders(1);
-                } else if (index === 1) {
-                  setCurrentTransfersPage(1);
-                  fetchTransfers(1);
-                }
-                // No special action needed for Charts tab yet
-              }}
-            >
+            <Tabs onChange={handleTabChange} isFitted variant="enclosed">
               <TabList mb={4} pb={4}>
                 <Tab>Top Holders</Tab>
                 <Tab>Transfers</Tab>
@@ -1701,6 +2302,27 @@ const Token: React.FC = () => {
                         </Button>
                       </ButtonGroup>
 
+                      {chartType === "price" && (
+                        <ButtonGroup size="sm" isAttached variant="outline">
+                          <Button
+                            onClick={() => setChartStyle("line")}
+                            colorScheme={
+                              chartStyle === "line" ? "blue" : "gray"
+                            }
+                          >
+                            Line
+                          </Button>
+                          <Button
+                            onClick={() => setChartStyle("candle")}
+                            colorScheme={
+                              chartStyle === "candle" ? "blue" : "gray"
+                            }
+                          >
+                            Candle
+                          </Button>
+                        </ButtonGroup>
+                      )}
+
                       <ButtonGroup size="sm" isAttached variant="outline">
                         {["1H", "24H", "7D", "30D"].map((range) => (
                           <Button
@@ -1845,105 +2467,33 @@ const Token: React.FC = () => {
                               </Center>
                             ) : (
                               <>
-                                <Line
-                                  data={priceData as any}
-                                  options={{
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                      legend: {
-                                        position: "top" as const,
-                                        display: legendDisplay,
-                                      },
-                                      title: {
-                                        display: false,
-                                      },
-                                      tooltip: {
-                                        callbacks: {
-                                          label: (context) => {
-                                            const value = context.raw as number;
-                                            if (chartType === "price") {
-                                              return `${
-                                                context.dataset.label
-                                              }: ${Number(value).toFixed(6)}`;
-                                            }
-                                            return `${
-                                              context.dataset.label
-                                            }: ${formatLargeNumber(value)}`;
-                                          },
-                                        },
-                                      },
-                                    },
-                                    scales: {
-                                      y: {
-                                        beginAtZero: false,
-                                        position: "left",
-                                        grid: {
-                                          display: true,
-                                          color: "rgba(0, 0, 0, 0.1)",
-                                        },
-                                        ticks: {
-                                          maxTicksLimit: yAxisTickLimit,
-                                          callback: (value) => {
-                                            if (chartType === "price") {
-                                              return Number(value) < 0.01
-                                                ? Number(value).toExponential(2)
-                                                : Number(value).toFixed(6);
-                                            }
-                                            return formatLargeNumber(Number(value));
-                                          },
-                                        },
-                                      },
-                                      y1: {
-                                        position: "right",
-                                        grid: {
-                                          display: false,
-                                        },
-                                        ticks: {
-                                          maxTicksLimit: yAxisTickLimit,
-                                          callback: (value) =>
-                                            formatLargeNumber(Number(value)),
-                                        },
-                                      },
-                                      x: {
-                                        grid: {
-                                          display: false,
-                                        },
-                                        ticks: {
-                                          maxTicksLimit: xAxisTickLimit,
-                                          maxRotation: xAxisRotation,
-                                          callback: (value) => {
-                                            const date = new Date(Number(value));
-                                            return date.toLocaleTimeString([], {
-                                              hour: "2-digit",
-                                              minute: "2-digit",
-                                            });
-                                          },
-                                        },
-                                      },
-                                    },
-                                    interaction: {
-                                      intersect: false,
-                                      mode: "index",
-                                    },
-                                    elements: {
-                                      line: {
-                                        tension: 0.4,
-                                      },
-                                    },
-                                  }}
-                                />
+                                {chartStyle === "line" ? (
+                                  <Line
+                                    data={priceData as any}
+                                    options={chartOptions}
+                                  />
+                                ) : (
+                                  <Scatter
+                                    data={priceData as any}
+                                    options={chartOptions}
+                                  />
+                                )}
                                 <Box
                                   position="absolute"
                                   bottom="8px"
                                   right="8px"
-                                  bg={useColorModeValue("purple.600", "gray.800")}
+                                  bg={useColorModeValue(
+                                    "purple.600",
+                                    "gray.800"
+                                  )}
                                   p={1}
                                   borderRadius="md"
                                   display="flex"
                                   alignItems="center"
                                   as="a"
-                                  href={`https://voi.humble.sh/#/swap?poolId=${selectedPool || ''}`}
+                                  href={`https://voi.humble.sh/#/swap?poolId=${
+                                    selectedPool || ""
+                                  }`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   cursor="pointer"
