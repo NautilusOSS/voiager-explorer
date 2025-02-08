@@ -192,7 +192,7 @@ const Token: React.FC = () => {
     labels: string[];
     datasets: {
       label: string;
-      data: number[];
+      data: { x: number; y: number }[];
       borderColor?: string;
       backgroundColor?: string;
       tension?: number;
@@ -423,30 +423,30 @@ const Token: React.FC = () => {
     setFilteredHolders(filtered);
   }, [searchQuery, holders]);
 
-  const calculatePoolTVL = (pool: Pool) => {
-    if (!pool || !token) return 0;
+  // const calculatePoolTVL = (pool: Pool) => {
+  //   if (!pool || !token) return 0;
 
-    const poolBalA = Number(pool.poolBalA); // Math.pow(10, pool.tokADecimals);
-    const poolBalB = Number(pool.poolBalB); // Math.pow(10, pool.tokBDecimals);
+  //   const poolBalA = Number(pool.poolBalA); // Math.pow(10, pool.tokADecimals);
+  //   const poolBalB = Number(pool.poolBalB); // Math.pow(10, pool.tokBDecimals);
 
-    // If either token is VOI
-    if (pool.symbolA === "VOI") {
-      return poolBalA * 2;
-    }
-    if (pool.symbolB === "VOI") {
-      return poolBalB * 2;
-    }
+  //   // If either token is VOI
+  //   if (pool.symbolA === "VOI") {
+  //     return poolBalA * 2;
+  //   }
+  //   if (pool.symbolB === "VOI") {
+  //     return poolBalB * 2;
+  //   }
 
-    // If the token we're viewing is in the pool
-    if (pool.symbolA === token.symbol) {
-      return poolBalA * (currentPrice ?? 1) * 2;
-    }
-    if (pool.symbolB === token.symbol) {
-      return poolBalB * (currentPrice ?? 1) * 2;
-    }
+  //   // If the token we're viewing is in the pool
+  //   if (pool.symbolA === token.symbol) {
+  //     return poolBalA * (currentPrice ?? 1) * 2;
+  //   }
+  //   if (pool.symbolB === token.symbol) {
+  //     return poolBalB * (currentPrice ?? 1) * 2;
+  //   }
 
-    return 0;
-  };
+  //   return 0;
+  // };
 
   useEffect(() => {
     const fetchPools = async () => {
@@ -580,7 +580,7 @@ const Token: React.FC = () => {
         let lastValidTvl = null;
 
         // First pass: Calculate TVL for each swap
-        recentSwaps.forEach((swap) => {
+        recentSwaps.forEach((swap: any) => {
           const bucketTime =
             Math.floor(swap.timestamp / bucketSize) * bucketSize * 1000;
           const selectedPoolData = pools.find(
@@ -653,7 +653,7 @@ const Token: React.FC = () => {
             {
               type: "line",
               label: `TVL (${tvlCurrency})`,
-              data: tvlData,
+              data: tvlData as any,
               borderColor: "rgb(75, 192, 192)",
               backgroundColor: "rgba(75, 192, 192, 0.1)",
               fill: true,
@@ -709,10 +709,10 @@ const Token: React.FC = () => {
                 borderWidth: 2,
                 yAxisID: "y",
                 order: 0,
-                cubicInterpolationMode: "monotone",
-                spanGaps: true,
+                //cubicInterpolationMode: "monotone",
+                //spanGaps: true,
                 segment: {
-                  borderColor: (ctx) => "rgb(75, 192, 192)",
+                  borderColor: (_) => "rgb(75, 192, 192)",
                 },
                 borderJoinStyle: "round",
                 borderCapStyle: "round",
@@ -720,7 +720,7 @@ const Token: React.FC = () => {
               {
                 type: "bar",
                 label: "Volume",
-                data: volumes,
+                data: volumes as any,
                 backgroundColor: "rgba(128, 128, 128, 0.2)",
                 yAxisID: "y1",
                 order: 1,
@@ -1616,7 +1616,7 @@ const Token: React.FC = () => {
   }, [priceData, chartStyle]); // Added chartStyle as dependency
 
   // Update the chart options
-  const chartOptions = {
+  const chartOptions: any = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
