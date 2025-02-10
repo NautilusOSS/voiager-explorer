@@ -26,7 +26,7 @@ import {
   VStack,
   Skeleton,
 } from "@chakra-ui/react";
-import { CopyIcon, InfoIcon, DownloadIcon } from "@chakra-ui/icons";
+import { CopyIcon, InfoIcon, DownloadIcon, RepeatIcon } from "@chakra-ui/icons";
 import { useToast } from "@chakra-ui/react";
 import { BigNumber } from "bignumber.js";
 
@@ -70,10 +70,11 @@ const HoldersTable = ({
   const [excludedAddresses, setExcludedAddresses] = useState<Set<string>>(
     new Set()
   );
-  const [showExportOptions] = useState(false);
+  const [showExportOptions, setShowExportOptions] = useState(false);
   const [liquidityPools, setLiquidityPools] = useState<Set<string>>(new Set());
   const [distributionAmount, setDistributionAmount] = useState<string>("");
   const [distributionDecimals, setDistributionDecimals] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const formatAddress = (address: string) => {
     if (!address) return "";
@@ -260,6 +261,52 @@ const HoldersTable = ({
         isClosable: true,
         position: "top",
       });
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchToken();
+      const response = await fetch(
+        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${contractId}&limit=${rowsPerPage}&offset=${(page - 1) * rowsPerPage}`
+      );
+      const data = await response.json();
+      
+      // Update holders with new data
+      if (token) {
+        const filteredBalances = data.balances.filter(
+          (h: any) => !excludeAddresses.includes(h.accountId)
+        );
+        setTotalHolders(data.total);
+
+        const totalSupply = new BigNumber(token.totalSupply).div(
+          new BigNumber(10).pow(token.decimals)
+        );
+
+        const holders = filteredBalances.map((h: any) => {
+          const balance = new BigNumber(h.balance).div(
+            new BigNumber(10).pow(token.decimals)
+          );
+
+          return {
+            address: h.accountId,
+            balance: balance.toString(),
+            percentage: balance.div(totalSupply).times(100).toNumber(),
+          };
+        });
+
+        const sortedHolders = holders.sort(
+          (a: Holder, b: Holder) => parseFloat(b.balance) - parseFloat(a.balance)
+        );
+
+        const holdersWithUpdatedPercentages = calculatePercentages(sortedHolders);
+        setHolders(holdersWithUpdatedPercentages);
+      }
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -694,6 +741,29 @@ const HoldersTable = ({
 
   return (
     <Box>
+      <Flex justify="space-between" align="center" mb={4}>
+        <Text fontSize="lg" fontWeight="medium">
+          Token Holders
+        </Text>
+        <HStack spacing={2}>
+          <Button
+            size="sm"
+            onClick={() => setShowExportOptions(!showExportOptions)}
+            leftIcon={<DownloadIcon />}
+          >
+            Export Options
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleRefresh}
+            isLoading={isRefreshing}
+            loadingText="Refreshing"
+            leftIcon={<RepeatIcon />}
+          >
+            Refresh
+          </Button>
+        </HStack>
+      </Flex>
       <Box
         borderWidth="1px"
         borderRadius="lg"
