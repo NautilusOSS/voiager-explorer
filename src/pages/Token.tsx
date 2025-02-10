@@ -45,8 +45,6 @@ import {
   useColorModeValue,
   Icon,
   Select,
-  InputGroup,
-  InputLeftAddon,
   ButtonGroup,
 } from "@chakra-ui/react";
 import { indexerClient } from "../services/algorand";
@@ -57,8 +55,7 @@ import {
   ExternalLinkIcon,
 } from "@chakra-ui/icons";
 import { useToast } from "@chakra-ui/react";
-import algosdk from "algosdk";
-import { Line, Scatter } from "react-chartjs-2";
+import algosdk, { Address } from "algosdk";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -78,6 +75,12 @@ import {
 } from "chartjs-chart-financial";
 import "chartjs-adapter-date-fns";
 import { enUS } from "date-fns/locale";
+import TVLChart from "../components/TVLChart";
+import PriceLineChart from "../components/PriceLineChart";
+import PriceCandleChart from "../components/PriceCandleChart";
+import HoldersTable from "../components/HoldersTable";
+import SwapTransactionsTable from "../components/SwapTransactionsTable";
+import { TOKEN_CONFIGS } from "../constants/tokens";
 
 ChartJS.register(
   CategoryScale,
@@ -94,12 +97,6 @@ ChartJS.register(
   TimeScale
 );
 
-interface TokenPrice {
-  latest_price: string | null;
-  earliest_price: string | null;
-  percent_change: number | null;
-}
-
 interface Token {
   contractId: number;
   name: string;
@@ -113,9 +110,21 @@ interface Token {
   verified: number | null;
   mintRound: number;
   globalState: Record<string, any>;
-  change_1h: TokenPrice;
-  change_24h: TokenPrice;
-  change_7d: TokenPrice;
+  change_1h: {
+    latest_price: string | null;
+    earliest_price: string | null;
+    percent_change: number | null;
+  };
+  change_24h: {
+    latest_price: string | null;
+    earliest_price: string | null;
+    percent_change: number | null;
+  };
+  change_7d: {
+    latest_price: string | null;
+    earliest_price: string | null;
+    percent_change: number | null;
+  };
   latest_price: number;
 }
 
@@ -144,36 +153,15 @@ interface TransferFilters {
   maxTimestamp?: number;
 }
 
-interface Pool {
-  contractId: number;
-  symbolA: string;
-  symbolB: string;
-  tokAId: string;
-  tokBId: string;
-  tvlA: string;
-  tvlB: string;
-  poolBalA: string;
-  poolBalB: string;
-  tokADecimals: number;
-  tokBDecimals: number;
-  tvlUSDC: number;
-  tvlVOI: number;
-}
-
 const Token: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [token, setToken] = useState<Token | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creationTime, setCreationTime] = useState<number | null>(null);
-  const [holders, setHolders] = useState<TokenHolder[]>([]);
-  const [currentPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [hasMoreTransfers, setHasMoreTransfers] = useState(true);
   const [transfersPerPage, setTransfersPerPage] = useState(10);
-  const [holdersPerPage, setHoldersPerPage] = useState(10);
-  const [currentHoldersPage, setCurrentHoldersPage] = useState(1);
   const [currentTransfersPage, setCurrentTransfersPage] = useState(1);
   const [, setActiveTab] = useState(0);
   const [filters, setFilters] = useState<TransferFilters>({});
@@ -186,8 +174,6 @@ const Token: React.FC = () => {
   const [transferDetails, setTransferDetails] = useState<{
     [key: string]: any;
   }>({});
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filteredHolders, setFilteredHolders] = useState<TokenHolder[]>([]);
   const [priceData, setPriceData] = useState<{
     labels: string[];
     datasets: {
@@ -237,21 +223,23 @@ const Token: React.FC = () => {
       },
     ],
   });
-  const [pools, setPools] = useState<Pool[]>([]);
+  const [pools, setPools] = useState<any[]>([]);
   const [selectedPool, setSelectedPool] = useState<number | null>(null);
   const [invertedPrice, setInvertedPrice] = useState(false);
   const [tvlCurrency, setTvlCurrency] = useState<"VOI" | "USDC">("VOI");
   const [chartType, setChartType] = useState<"price" | "tvl">("price");
-  const [usdcPool, setUsdcPool] = useState<Pool | null>(null);
+  const [usdcPool, setUsdcPool] = useState<any | null>(null);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  const [currentUsdPrice, setCurrentUsdPrice] = useState<number | null>(null);
   const [showDataTable, setShowDataTable] = useState(false);
   const [showHoldersTable, setShowHoldersTable] = useState(false);
-  const [swapData, setSwapData] = useState<any[]>([]);
+  const [, setSwapData] = useState<any[]>([]);
   const [timeRange, setTimeRange] = useState<"1H" | "24H" | "7D" | "30D">("7D");
-  const [chartLoading, setChartLoading] = useState(false);
-  const [poolHolders, setPoolHolders] = useState<TokenHolder[]>([]);
-  const [poolHoldersLoading, setPoolHoldersLoading] = useState(false);
+  const [, setChartLoading] = useState(false);
+  const [, setPoolHolders] = useState<TokenHolder[]>([]);
+  const [, setPoolHoldersLoading] = useState(false);
   const [chartStyle, setChartStyle] = useState<"line" | "candle">("candle");
+  const [holdersPerPage] = useState(100);
 
   // Move breakpoint values to component level
   const legendDisplay = useBreakpointValue({ base: false, sm: true });
@@ -272,13 +260,6 @@ const Token: React.FC = () => {
     });
   };
 
-  const formatBalance = (balance: string, decimals: number) => {
-    const num = Number(balance) / Math.pow(10, decimals);
-    return num.toLocaleString(undefined, {
-      maximumFractionDigits: decimals,
-    });
-  };
-
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
@@ -293,34 +274,6 @@ const Token: React.FC = () => {
       return (num / 1e3).toFixed(2) + "K";
     } else {
       return num.toFixed(2);
-    }
-  };
-
-  const fetchHolders = async (page: number) => {
-    try {
-      const response = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${id}&limit=${holdersPerPage}&offset=${
-          (page - 1) * holdersPerPage
-        }`
-      );
-      const data = await response.json();
-
-      // Filter out zero balances, application address, and sort by balance
-      const sortedHolders = data.balances
-        .filter(
-          (holder: TokenHolder) =>
-            Number(holder.balance) > 0 &&
-            holder.accountId !== `${algosdk.getApplicationAddress(Number(id))}`
-        )
-        .sort(
-          (a: TokenHolder, b: TokenHolder) =>
-            Number(b.balance) - Number(a.balance)
-        );
-
-      setHolders(sortedHolders);
-      setHasMore(sortedHolders.length === holdersPerPage);
-    } catch (err) {
-      console.error("Error fetching holders:", err);
     }
   };
 
@@ -368,12 +321,6 @@ const Token: React.FC = () => {
     setCurrentTransfersPage(1);
   };
 
-  const handleHoldersPerPageChange = (value: number) => {
-    setHoldersPerPage(value);
-    setCurrentHoldersPage(1);
-    fetchHolders(1);
-  };
-
   const handleTransfersPerPageChange = (value: number) => {
     setTransfersPerPage(value);
     setCurrentTransfersPage(1);
@@ -410,43 +357,9 @@ const Token: React.FC = () => {
 
     if (id) {
       fetchToken();
-      fetchHolders(currentPage);
-      fetchTransfers(currentPage);
+      fetchTransfers(currentTransfersPage);
     }
-  }, [id, currentPage, holdersPerPage, transfersPerPage]);
-
-  useEffect(() => {
-    // Filter holders based on search query
-    const filtered = holders.filter((holder) =>
-      holder.accountId.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredHolders(filtered);
-  }, [searchQuery, holders]);
-
-  // const calculatePoolTVL = (pool: Pool) => {
-  //   if (!pool || !token) return 0;
-
-  //   const poolBalA = Number(pool.poolBalA); // Math.pow(10, pool.tokADecimals);
-  //   const poolBalB = Number(pool.poolBalB); // Math.pow(10, pool.tokBDecimals);
-
-  //   // If either token is VOI
-  //   if (pool.symbolA === "VOI") {
-  //     return poolBalA * 2;
-  //   }
-  //   if (pool.symbolB === "VOI") {
-  //     return poolBalB * 2;
-  //   }
-
-  //   // If the token we're viewing is in the pool
-  //   if (pool.symbolA === token.symbol) {
-  //     return poolBalA * (currentPrice ?? 1) * 2;
-  //   }
-  //   if (pool.symbolB === token.symbol) {
-  //     return poolBalB * (currentPrice ?? 1) * 2;
-  //   }
-
-  //   return 0;
-  // };
+  }, [id, currentTransfersPage, transfersPerPage]);
 
   useEffect(() => {
     const fetchPools = async () => {
@@ -469,7 +382,7 @@ const Token: React.FC = () => {
         );
         const data = await response.json();
         // Calculate both TVL values for each pool
-        const poolsWithTVL = data.pools.map((pool: Pool) => {
+        const poolsWithTVL = data.pools.map((pool: any) => {
           const tvlVOI = Number(pool.tvlA) + Number(pool.tvlB);
           let tvlUSDC = tvlVOI * voiPrice;
 
@@ -1081,7 +994,7 @@ const Token: React.FC = () => {
   const renderListView = () => {
     if (isMobile) {
       return (
-        <Stack spacing={4}>
+        <Stack spacing={2}>
           {transfers.map((transfer) => {
             const amount = token
               ? Number(transfer.amount) / Math.pow(10, token.decimals)
@@ -1098,17 +1011,19 @@ const Token: React.FC = () => {
                 borderColor={useColorModeValue("gray.200", "gray.700")}
                 bg={useColorModeValue("white", "gray.800")}
                 _hover={{
-                  transform: "translateY(-2px)",
-                  boxShadow: "lg",
+                  transform: "translateY(-1px)",
+                  boxShadow: "md",
                   borderColor: useColorModeValue("gray.300", "gray.600"),
                 }}
                 transition="all 0.2s"
               >
-                <CardBody>
-                  <Stack spacing={3}>
+                <CardBody py={2} px={3}>
+                  <Stack spacing={2}>
                     <Flex justify="space-between" align="center">
-                      <Badge colorScheme="green">{transferType}</Badge>
-                      <Text fontSize="sm" color="gray.500">
+                      <Badge colorScheme="green" fontSize="xs">
+                        {transferType}
+                      </Badge>
+                      <Text fontSize="xs" color="gray.500">
                         {new Date(transfer.timestamp * 1000).toLocaleString()}
                       </Text>
                     </Flex>
@@ -1190,14 +1105,16 @@ const Token: React.FC = () => {
         bg={useColorModeValue("white", "gray.800")}
         overflow="hidden"
       >
-        <Table variant="simple">
+        <Table variant="simple" size="sm">
           <Thead bg={useColorModeValue("gray.50", "gray.700")}>
             <Tr>
-              <Th>Time</Th>
-              <Th>Type</Th>
-              <Th>From</Th>
-              <Th>To</Th>
-              <Th isNumeric>Amount</Th>
+              <Th py={2}>Time</Th>
+              <Th py={2}>Type</Th>
+              <Th py={2}>From</Th>
+              <Th py={2}>To</Th>
+              <Th py={2} isNumeric>
+                Amount
+              </Th>
             </Tr>
           </Thead>
           <Tbody>
@@ -1218,16 +1135,18 @@ const Token: React.FC = () => {
                     cursor="pointer"
                     _hover={{ bg: useColorModeValue("gray.50", "gray.700") }}
                   >
-                    <Td>
+                    <Td py={2}>
                       {new Date(transfer.timestamp * 1000).toLocaleString()}
                     </Td>
-                    <Td>
-                      <Badge colorScheme="green">{transferType}</Badge>
+                    <Td py={2}>
+                      <Badge colorScheme="green" fontSize="xs">
+                        {transferType}
+                      </Badge>
                     </Td>
-                    <Td>
-                      <Flex align="center" gap={2}>
+                    <Td py={2}>
+                      <Flex align="center" gap={1}>
                         <RouterLink to={`/account/${transfer.sender}`}>
-                          <Text color="blue.500">
+                          <Text color="blue.500" fontSize="sm">
                             {formatAddress(transfer.sender)}
                           </Text>
                         </RouterLink>
@@ -1243,10 +1162,10 @@ const Token: React.FC = () => {
                         />
                       </Flex>
                     </Td>
-                    <Td>
-                      <Flex align="center" gap={2}>
+                    <Td py={2}>
+                      <Flex align="center" gap={1}>
                         <RouterLink to={`/account/${transfer.receiver}`}>
-                          <Text color="blue.500">
+                          <Text color="blue.500" fontSize="sm">
                             {formatAddress(transfer.receiver)}
                           </Text>
                         </RouterLink>
@@ -1262,7 +1181,7 @@ const Token: React.FC = () => {
                         />
                       </Flex>
                     </Td>
-                    <Td isNumeric>
+                    <Td py={2} isNumeric>
                       {isZeroAmount
                         ? "-"
                         : amount.toFixed(token?.decimals || 6)}
@@ -1270,151 +1189,12 @@ const Token: React.FC = () => {
                   </Tr>
                   {isExpanded && (
                     <Tr>
-                      <Td colSpan={5}>
+                      <Td colSpan={5} py={2}>
                         {renderTransactionDetails(transfer.transactionId)}
                       </Td>
                     </Tr>
                   )}
                 </React.Fragment>
-              );
-            })}
-          </Tbody>
-        </Table>
-      </Box>
-    );
-  };
-
-  const renderHoldersView = () => {
-    if (isMobile) {
-      return (
-        <Stack spacing={4}>
-          {filteredHolders.map((holder, index) => {
-            const balance = token
-              ? formatBalance(holder.balance, token.decimals)
-              : "0";
-            const percentage = token
-              ? (
-                  (Number(holder.balance) / Number(token.totalSupply)) *
-                  100
-                ).toFixed(2)
-              : "0";
-            const rank = (currentHoldersPage - 1) * holdersPerPage + index + 1;
-
-            return (
-              <Card
-                key={holder.accountId}
-                borderWidth="1px"
-                borderColor={useColorModeValue("gray.200", "gray.700")}
-                bg={useColorModeValue("white", "gray.800")}
-                _hover={{
-                  transform: "translateY(-2px)",
-                  boxShadow: "lg",
-                  borderColor: useColorModeValue("gray.300", "gray.600"),
-                }}
-                transition="all 0.2s"
-              >
-                <CardBody>
-                  <Stack spacing={3}>
-                    <Flex justify="space-between" align="center">
-                      <Badge colorScheme="purple">#{rank}</Badge>
-                      <Flex align="center" gap={2}>
-                        <RouterLink to={`/account/${holder.accountId}`}>
-                          <Text color="blue.500">
-                            {formatAddress(holder.accountId)}
-                          </Text>
-                        </RouterLink>
-                        <IconButton
-                          aria-label="Copy address"
-                          icon={<CopyIcon />}
-                          size="xs"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCopy(holder.accountId);
-                          }}
-                        />
-                      </Flex>
-                    </Flex>
-                    <Divider />
-                    <SimpleGrid columns={2} spacing={4}>
-                      <Box>
-                        <Text fontSize="sm" color="gray.500">
-                          Balance
-                        </Text>
-                        <Text fontWeight="semibold">{balance}</Text>
-                      </Box>
-                      <Box>
-                        <Text fontSize="sm" color="gray.500">
-                          % of Supply
-                        </Text>
-                        <Text fontWeight="semibold">{percentage}%</Text>
-                      </Box>
-                    </SimpleGrid>
-                  </Stack>
-                </CardBody>
-              </Card>
-            );
-          })}
-        </Stack>
-      );
-    }
-
-    return (
-      <Box
-        borderWidth="1px"
-        borderRadius="lg"
-        borderColor={useColorModeValue("gray.200", "gray.700")}
-        bg={useColorModeValue("white", "gray.800")}
-        overflow="hidden"
-      >
-        <Table variant="simple">
-          <Thead bg={useColorModeValue("gray.50", "gray.700")}>
-            <Tr>
-              <Th>Rank</Th>
-              <Th>Address</Th>
-              <Th isNumeric>Balance</Th>
-              <Th isNumeric>% of Supply</Th>
-            </Tr>
-          </Thead>
-          <Tbody>
-            {filteredHolders.map((holder, index) => {
-              const balance = token
-                ? formatBalance(holder.balance, token.decimals)
-                : "0";
-              const percentage = token
-                ? (
-                    (Number(holder.balance) / Number(token.totalSupply)) *
-                    100
-                  ).toFixed(2)
-                : "0";
-              const rank =
-                (currentHoldersPage - 1) * holdersPerPage + index + 1;
-
-              return (
-                <Tr key={holder.accountId}>
-                  <Td>#{rank}</Td>
-                  <Td>
-                    <Flex align="center" gap={2}>
-                      <RouterLink to={`/account/${holder.accountId}`}>
-                        <Text color="blue.500">
-                          {formatAddress(holder.accountId)}
-                        </Text>
-                      </RouterLink>
-                      <IconButton
-                        aria-label="Copy address"
-                        icon={<CopyIcon />}
-                        size="xs"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCopy(holder.accountId);
-                        }}
-                      />
-                    </Flex>
-                  </Td>
-                  <Td isNumeric>{balance}</Td>
-                  <Td isNumeric>{percentage}%</Td>
-                </Tr>
               );
             })}
           </Tbody>
@@ -1445,6 +1225,14 @@ const Token: React.FC = () => {
             : Number(tokenPrice.price);
         setCurrentPrice(price);
       }
+      // set current usd price
+      const voiTokenPrice = data.prices.find(
+        (price: any) =>
+          (price.symbolA === "aUSDC" && price.symbolB === "VOI") ||
+          (price.symbolB === "aUSDC" && price.symbolA === "VOI")
+      );
+      const voiUSDPrice = voiTokenPrice?.price;
+      setCurrentUsdPrice(voiUSDPrice);
     } catch (error) {
       console.error("Error fetching current price:", error);
     }
@@ -1905,14 +1693,10 @@ const Token: React.FC = () => {
   // Update the tab change handler
   const handleTabChange = (index: number) => {
     setActiveTab(index);
-    if (index === 0) {
-      setCurrentHoldersPage(1);
-      fetchHolders(1);
-    } else if (index === 1) {
+    if (index === 1) {
       setCurrentTransfersPage(1);
       fetchTransfers(1);
     } else if (index === 2 && selectedPool) {
-      // Explicitly fetch price data when switching to chart tab
       fetchPriceData();
     }
   };
@@ -1932,6 +1716,8 @@ const Token: React.FC = () => {
       </Box>
     );
   }
+
+  console.log("priceData", priceData);
 
   return (
     <Container maxW="8xl" py={8}>
@@ -2060,48 +1846,18 @@ const Token: React.FC = () => {
 
               <TabPanels>
                 <TabPanel px={0}>
-                  <Stack spacing={4}>
-                    <Flex justify="space-between" mb={2}>
-                      <FormControl maxW="300px">
-                        <Input
-                          placeholder="Search by address"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          size="sm"
-                        />
-                      </FormControl>
-                      <FormControl maxW="200px">
-                        <Select
-                          value={holdersPerPage}
-                          onChange={(e) =>
-                            handleHoldersPerPageChange(Number(e.target.value))
-                          }
-                          size="sm"
-                        >
-                          <option value={10}>10 rows</option>
-                          <option value={25}>25 rows</option>
-                          <option value={50}>50 rows</option>
-                          <option value={100}>100 rows</option>
-                        </Select>
-                      </FormControl>
-                    </Flex>
-                    {renderHoldersView()}
-                    {hasMore && (
-                      <Flex justify="center" mt={4}>
-                        <Button
-                          onClick={() => {
-                            const nextPage = currentHoldersPage + 1;
-                            setCurrentHoldersPage(nextPage);
-                            fetchHolders(nextPage);
-                          }}
-                          size="sm"
-                          colorScheme="blue"
-                        >
-                          Load More
-                        </Button>
-                      </Flex>
-                    )}
-                  </Stack>
+                  {id && (
+                    <HoldersTable
+                      contractId={id}
+                      excludeAddresses={[
+                        Address.zeroAddress().toString(),
+                        algosdk.getApplicationAddress(Number(id)).toString(),
+                        token.creator,
+                        ...(TOKEN_CONFIGS[id]?.excludedAddresses || []),
+                      ]}
+                      distributionAmount={TOKEN_CONFIGS[id]?.distributionAmount}
+                    />
+                  )}
                 </TabPanel>
 
                 <TabPanel px={0}>
@@ -2336,18 +2092,26 @@ const Token: React.FC = () => {
                       </ButtonGroup>
 
                       <ButtonGroup size="sm" spacing={2}>
-                        <Button
-                          onClick={() => setShowDataTable(!showDataTable)}
-                          variant="outline"
-                        >
-                          {showDataTable ? "Hide Data" : "Show Data"}
-                        </Button>
-                        <Button
-                          onClick={() => setShowHoldersTable(!showHoldersTable)}
-                          variant="outline"
-                        >
-                          {showHoldersTable ? "Hide Holders" : "Show Holders"}
-                        </Button>
+                        {chartType === "price" && (
+                          <>
+                            <Button
+                              onClick={() => setShowDataTable(!showDataTable)}
+                              variant="outline"
+                            >
+                              {showDataTable ? "Hide Data" : "Show Data"}
+                            </Button>
+                            <Button
+                              onClick={() =>
+                                setShowHoldersTable(!showHoldersTable)
+                              }
+                              variant="outline"
+                            >
+                              {showHoldersTable
+                                ? "Hide Holders"
+                                : "Show Holders"}
+                            </Button>
+                          </>
+                        )}
                       </ButtonGroup>
                     </Flex>
 
@@ -2359,319 +2123,96 @@ const Token: React.FC = () => {
                         )}
                         borderRadius="lg"
                       >
-                        <Stack spacing={4}>
-                          <Flex
-                            justify="space-between"
-                            align="center"
-                            direction={{ base: "column", md: "row" }}
-                            gap={4}
-                          >
-                            <Heading size="md">
-                              {chartType === "price"
-                                ? "Price History"
-                                : "TVL History"}
-                            </Heading>
-                            <Flex
-                              gap={4}
-                              align="center"
-                              direction={{ base: "column", sm: "row" }}
-                              width={{ base: "100%", md: "auto" }}
-                            >
-                              <FormControl
-                                width={{ base: "100%", sm: "auto" }}
-                                minW={{ sm: "200px" }}
-                              >
-                                <InputGroup size="sm">
-                                  <InputLeftAddon
-                                    cursor="pointer"
-                                    onClick={() =>
-                                      setTvlCurrency((curr) =>
-                                        curr === "USDC" ? "VOI" : "USDC"
-                                      )
-                                    }
-                                    _hover={{
-                                      bg: useColorModeValue(
-                                        "gray.200",
-                                        "gray.600"
-                                      ),
-                                    }}
-                                  >
-                                    {tvlCurrency}
-                                  </InputLeftAddon>
-                                  <Select
-                                    value={selectedPool || ""}
-                                    onChange={(e) =>
-                                      setSelectedPool(Number(e.target.value))
-                                    }
-                                    placeholder="Select pool"
-                                    size="sm"
-                                  >
-                                    {pools.map((pool) => (
-                                      <option
-                                        key={pool.contractId}
-                                        value={pool.contractId}
-                                      >
-                                        {pool.symbolA}/{pool.symbolB} (TVL:{" "}
-                                        {tvlCurrency === "USDC" ? "$" : ""}
-                                        {formatLargeNumber(
-                                          tvlCurrency === "USDC"
-                                            ? pool.tvlUSDC
-                                            : pool.tvlVOI
-                                        )}{" "}
-                                        {tvlCurrency})
-                                      </option>
-                                    ))}
-                                  </Select>
-                                </InputGroup>
-                              </FormControl>
-                              {chartType === "price" && selectedPool && (
-                                <Button
-                                  size="sm"
-                                  onClick={() =>
-                                    setInvertedPrice(!invertedPrice)
-                                  }
-                                  variant="outline"
-                                  width={{ base: "100%", sm: "auto" }}
-                                >
-                                  {invertedPrice
-                                    ? `${
-                                        pools.find(
-                                          (p) => p.contractId === selectedPool
-                                        )?.symbolB
-                                      } / ${
-                                        pools.find(
-                                          (p) => p.contractId === selectedPool
-                                        )?.symbolA
-                                      }`
-                                    : `${
-                                        pools.find(
-                                          (p) => p.contractId === selectedPool
-                                        )?.symbolA
-                                      } / ${
-                                        pools.find(
-                                          (p) => p.contractId === selectedPool
-                                        )?.symbolB
-                                      }`}
-                                </Button>
-                              )}
-                            </Flex>
-                          </Flex>
-                          <Box
-                            height={{ base: "300px", md: "400px" }}
-                            width="100%"
-                            position="relative"
-                          >
-                            {chartLoading ? (
-                              <Center height="100%">
-                                <Spinner size="xl" />
-                              </Center>
+                        {chartType === "price" ? (
+                          <Stack spacing={4}>
+                            {chartStyle === "line" ? (
+                              <PriceLineChart
+                                pools={pools}
+                                selectedPool={selectedPool}
+                                setSelectedPool={setSelectedPool}
+                                tvlCurrency={tvlCurrency}
+                                setTvlCurrency={setTvlCurrency}
+                                timeRange={timeRange}
+                                showDataTable={showDataTable}
+                                showHoldersTable={showHoldersTable}
+                                invertedPrice={invertedPrice}
+                                setInvertedPrice={setInvertedPrice}
+                                usdcPool={usdcPool}
+                                currentPrice={currentPrice}
+                              />
                             ) : (
-                              <>
-                                {chartStyle === "line" ? (
-                                  <Line
-                                    data={priceData as any}
-                                    options={chartOptions}
-                                  />
-                                ) : (
-                                  <Scatter
-                                    data={priceData as any}
-                                    options={chartOptions}
+                              <PriceCandleChart
+                                pools={pools}
+                                selectedPool={selectedPool}
+                                setSelectedPool={setSelectedPool}
+                                tvlCurrency={tvlCurrency}
+                                setTvlCurrency={setTvlCurrency}
+                                timeRange={timeRange}
+                                showDataTable={showDataTable}
+                                showHoldersTable={showHoldersTable}
+                                invertedPrice={invertedPrice}
+                                setInvertedPrice={setInvertedPrice}
+                                usdcPool={usdcPool}
+                                currentPrice={currentPrice}
+                              />
+                            )}
+
+                            {showDataTable && (
+                              <Box mt={4}>
+                                <Heading size="md" mb={4}>
+                                  Transaction History
+                                </Heading>
+                                {selectedPool && (
+                                  <SwapTransactionsTable
+                                    contractId={selectedPool.toString()}
                                   />
                                 )}
-                                <Box
-                                  position="absolute"
-                                  bottom="8px"
-                                  right="8px"
-                                  bg={useColorModeValue(
-                                    "purple.600",
-                                    "gray.800"
-                                  )}
-                                  p={1}
-                                  borderRadius="md"
-                                  display="flex"
-                                  alignItems="center"
-                                  as="a"
-                                  href={`https://voi.humble.sh/#/swap?poolId=${
-                                    selectedPool || ""
-                                  }`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  cursor="pointer"
-                                  _hover={{ opacity: 0.8 }}
-                                >
-                                  <Image
-                                    src="https://voi.humble.sh/logo.png"
-                                    alt="Humble"
-                                    height="24px"
-                                    title="Available on Humble"
-                                  />
-                                </Box>
-                              </>
+                              </Box>
                             )}
-                          </Box>
-
-                          {showDataTable && (
-                            <Box overflowX="auto">
-                              <Table variant="simple" size="sm">
-                                <Thead>
-                                  <Tr>
-                                    <Th>Time</Th>
-                                    <Th>Type</Th>
-                                    <Th>Transaction</Th>
-                                    <Th isNumeric>In</Th>
-                                    <Th isNumeric>Out</Th>
-                                    <Th isNumeric>Price</Th>
-                                  </Tr>
-                                </Thead>
-                                <Tbody>
-                                  {swapData.map((swap) => {
-                                    const isAtoB = Number(swap.inBalA) > 0;
-                                    const inAmount = isAtoB
-                                      ? Number(swap.inBalA)
-                                      : Number(swap.inBalB);
-                                    const outAmount = isAtoB
-                                      ? Number(swap.outBalB)
-                                      : Number(swap.outBalA);
-                                    const selectedPool = pools.find(
-                                      (p) => p.contractId === swap.contractId
-                                    );
-
-                                    // Determine units based on swap direction
-                                    const inUnit = isAtoB
-                                      ? selectedPool?.symbolA
-                                      : selectedPool?.symbolB;
-                                    const outUnit = isAtoB
-                                      ? selectedPool?.symbolB
-                                      : selectedPool?.symbolA;
-
-                                    return (
-                                      <Tr key={swap.transactionId}>
-                                        <Td>
-                                          {new Date(
-                                            swap.timestamp * 1000
-                                          ).toLocaleString()}
-                                        </Td>
-                                        <Td>
-                                          <Badge
-                                            colorScheme={
-                                              isAtoB ? "green" : "red"
-                                            }
-                                          >
-                                            {isAtoB
-                                              ? `${selectedPool?.symbolA} → ${selectedPool?.symbolB}`
-                                              : `${selectedPool?.symbolB} → ${selectedPool?.symbolA}`}
-                                          </Badge>
-                                        </Td>
-                                        <Td>
-                                          <Flex align="center" gap={2}>
-                                            <RouterLink
-                                              to={`/transaction/${swap.transactionId}`}
-                                            >
-                                              <Text color="blue.500">
-                                                {formatAddress(
-                                                  swap.transactionId
-                                                )}
-                                              </Text>
-                                            </RouterLink>
-                                            <IconButton
-                                              aria-label="Copy transaction ID"
-                                              icon={<CopyIcon />}
-                                              size="xs"
-                                              variant="ghost"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleCopy(swap.transactionId);
-                                              }}
-                                            />
-                                          </Flex>
-                                        </Td>
-                                        <Td isNumeric>
-                                          {inAmount.toFixed(6)} {inUnit}
-                                        </Td>
-                                        <Td isNumeric>
-                                          {outAmount.toFixed(6)} {outUnit}
-                                        </Td>
-                                        <Td isNumeric>
-                                          {Number(swap.price).toFixed(6)}
-                                        </Td>
-                                      </Tr>
-                                    );
-                                  })}
-                                </Tbody>
-                              </Table>
-                            </Box>
-                          )}
-
-                          {showHoldersTable && (
-                            <Box overflowX="auto">
-                              <Flex
-                                justify="space-between"
-                                align="center"
-                                mb={4}
-                              >
-                                <Heading size="sm">Pool Holders</Heading>
-                                {poolHoldersLoading && <Spinner size="sm" />}
-                              </Flex>
-                              <Table variant="simple" size="sm">
-                                <Thead>
-                                  <Tr>
-                                    <Th>Rank</Th>
-                                    <Th>Address</Th>
-                                    <Th isNumeric>LP Balance</Th>
-                                    <Th isNumeric>Share</Th>
-                                  </Tr>
-                                </Thead>
-                                <Tbody>
-                                  {poolHolders.map((holder, index) => {
-                                    const totalSupply = poolHolders.reduce(
-                                      (sum, h) => sum + Number(h.balance),
-                                      0
-                                    );
-                                    const share = (
-                                      (Number(holder.balance) / totalSupply) *
-                                      100
-                                    ).toFixed(2);
-
-                                    return (
-                                      <Tr key={holder.accountId}>
-                                        <Td>#{index + 1}</Td>
-                                        <Td>
-                                          <Flex align="center" gap={2}>
-                                            <RouterLink
-                                              to={`/account/${holder.accountId}`}
-                                            >
-                                              <Text color="blue.500">
-                                                {formatAddress(
-                                                  holder.accountId
-                                                )}
-                                              </Text>
-                                            </RouterLink>
-                                            <IconButton
-                                              aria-label="Copy address"
-                                              icon={<CopyIcon />}
-                                              size="xs"
-                                              variant="ghost"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleCopy(holder.accountId);
-                                              }}
-                                            />
-                                          </Flex>
-                                        </Td>
-                                        <Td isNumeric>
-                                          {formatBalance(holder.balance, 6)}
-                                        </Td>
-                                        <Td isNumeric>{share}%</Td>
-                                      </Tr>
-                                    );
-                                  })}
-                                </Tbody>
-                              </Table>
-                            </Box>
-                          )}
-                        </Stack>
+                          </Stack>
+                        ) : (
+                          <TVLChart
+                            tokenId={id || ""}
+                            pools={pools}
+                            selectedPool={selectedPool}
+                            setSelectedPool={setSelectedPool}
+                            tvlCurrency={tvlCurrency}
+                            setTvlCurrency={setTvlCurrency}
+                            timeRange={timeRange}
+                            showDataTable={showDataTable}
+                            showHoldersTable={showHoldersTable}
+                            usdcPool={usdcPool}
+                            price={currentPrice || 0}
+                            usdPrice={currentUsdPrice || 0}
+                          />
+                        )}
                       </CardBody>
                     </Card>
+
+                    {/* Add LP Holders Table */}
+                    {showHoldersTable && selectedPool && (
+                      <Box mt={4}>
+                        <Heading size="md" mb={4}>
+                          LP Token Holders
+                        </Heading>
+                        <HoldersTable
+                          contractId={selectedPool.toString()}
+                          excludeAddresses={[
+                            Address.zeroAddress().toString(),
+                            algosdk
+                              .getApplicationAddress(Number(selectedPool))
+                              .toString(),
+                            token.creator,
+                            ...(TOKEN_CONFIGS[selectedPool.toString()]
+                              ?.excludedAddresses || []),
+                          ]}
+                          distributionAmount={
+                            TOKEN_CONFIGS[selectedPool.toString()]
+                              ?.distributionAmount
+                          }
+                        />
+                      </Box>
+                    )}
                   </Stack>
                 </TabPanel>
               </TabPanels>
