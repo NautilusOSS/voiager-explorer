@@ -25,6 +25,9 @@ import {
   Collapse,
   VStack,
   Skeleton,
+  Switch,
+  FormControl,
+  FormLabel,
 } from "@chakra-ui/react";
 import { CopyIcon, InfoIcon, DownloadIcon, RepeatIcon } from "@chakra-ui/icons";
 import { useToast } from "@chakra-ui/react";
@@ -75,6 +78,8 @@ const HoldersTable = ({
   const [distributionAmount, setDistributionAmount] = useState<string>("");
   const [distributionDecimals, setDistributionDecimals] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showEnVoi, setShowEnVoi] = useState(true);
+  const [enVoiNames, setEnVoiNames] = useState<Record<string, string>>({});
 
   const formatAddress = (address: string) => {
     if (!address) return "";
@@ -283,10 +288,12 @@ const HoldersTable = ({
     try {
       await fetchToken();
       const response = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${contractId}&limit=${rowsPerPage}&offset=${(page - 1) * rowsPerPage}`
+        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${contractId}&limit=${rowsPerPage}&offset=${
+          (page - 1) * rowsPerPage
+        }`
       );
       const data = await response.json();
-      
+
       // Update holders with new data
       if (token) {
         const filteredBalances = data.balances.filter(
@@ -311,10 +318,12 @@ const HoldersTable = ({
         });
 
         const sortedHolders = holders.sort(
-          (a: Holder, b: Holder) => parseFloat(b.balance) - parseFloat(a.balance)
+          (a: Holder, b: Holder) =>
+            parseFloat(b.balance) - parseFloat(a.balance)
         );
 
-        const holdersWithUpdatedPercentages = calculatePercentages(sortedHolders);
+        const holdersWithUpdatedPercentages =
+          calculatePercentages(sortedHolders);
         setHolders(holdersWithUpdatedPercentages);
       }
     } catch (error) {
@@ -323,6 +332,36 @@ const HoldersTable = ({
       setIsRefreshing(false);
     }
   };
+
+  const fetchEnVoiNames = async (addresses: string[]) => {
+    try {
+      // Fetch in batches of 50 addresses
+      const batchSize = 50;
+      const batches = [];
+      for (let i = 0; i < addresses.length; i += batchSize) {
+        batches.push(addresses.slice(i, i + batchSize));
+      }
+
+      const names: Record<string, string> = {};
+      
+      // Process each batch
+      for (const batch of batches) {
+        const response = await fetch(`https://api.envoi.sh/api/name/${batch.join(',')}`);
+        const data = await response.json();
+        data.results?.forEach((result: any) => {
+          if (result.name) {
+            names[result.address] = result.name;
+          }
+        });
+      }
+      
+      setEnVoiNames(names);
+    } catch (error) {
+      console.error("Error fetching enVoi names:", error);
+    }
+  };
+
+  console.log(enVoiNames);
 
   useEffect(() => {
     fetchToken();
@@ -393,6 +432,12 @@ const HoldersTable = ({
     excludedAddresses,
     excludeAddresses,
   ]);
+
+  useEffect(() => {
+    if (showEnVoi && holders.length > 0) {
+      fetchEnVoiNames(holders.map((h) => h.address));
+    }
+  }, [holders, showEnVoi]);
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
@@ -695,7 +740,9 @@ const HoldersTable = ({
                       <Flex align="center" gap={2}>
                         <RouterLink to={`/account/${holder.address}`}>
                           <Text color="blue.500">
-                            {formatAddress(holder.address)}
+                            {showEnVoi && enVoiNames[holder.address]
+                              ? enVoiNames[holder.address]
+                              : formatAddress(holder.address)}
                           </Text>
                         </RouterLink>
                         <IconButton
@@ -742,9 +789,38 @@ const HoldersTable = ({
   return (
     <Box>
       <Flex justify="space-between" align="center" mb={4}>
-        <Text fontSize="lg" fontWeight="medium">
-          Token Holders
-        </Text>
+        <HStack spacing={2}>
+          <Text fontSize="lg" fontWeight="medium" whiteSpace="nowrap">
+            Token Holders
+          </Text>
+          <FormControl display="flex" alignItems="center">
+            <FormLabel
+              htmlFor="envoi-switch"
+              mb="0"
+              ml={3}
+              mr={2}
+              fontSize="sm"
+              whiteSpace="nowrap"
+            >
+              Address
+            </FormLabel>
+            <Switch
+              id="envoi-switch"
+              size="sm"
+              isChecked={showEnVoi}
+              onChange={(e) => setShowEnVoi(e.target.checked)}
+            />
+            <FormLabel
+              htmlFor="envoi-switch"
+              mb="0"
+              ml={2}
+              fontSize="sm"
+              whiteSpace="nowrap"
+            >
+              enVoi
+            </FormLabel>
+          </FormControl>
+        </HStack>
         <HStack spacing={2}>
           <Button
             size="sm"
@@ -834,7 +910,9 @@ const HoldersTable = ({
                     <Flex align="center" gap={1}>
                       <RouterLink to={`/account/${holder.address}`}>
                         <Text color="blue.500" fontSize="sm">
-                          {formatAddress(holder.address)}
+                          {showEnVoi && enVoiNames[holder.address]
+                            ? enVoiNames[holder.address]
+                            : formatAddress(holder.address)}
                         </Text>
                       </RouterLink>
                       <IconButton
