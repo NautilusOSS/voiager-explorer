@@ -28,10 +28,20 @@ import {
   Switch,
   FormControl,
   FormLabel,
+  Spinner,
+  Icon,
 } from "@chakra-ui/react";
-import { CopyIcon, InfoIcon, DownloadIcon, RepeatIcon } from "@chakra-ui/icons";
+import {
+  CopyIcon,
+  InfoIcon,
+  DownloadIcon,
+  RepeatIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from "@chakra-ui/icons";
 import { useToast } from "@chakra-ui/react";
 import { BigNumber } from "bignumber.js";
+import algosdk, { Address } from "algosdk";
 
 interface Token {
   contractId: number;
@@ -46,6 +56,23 @@ interface Holder {
   balance: string;
   percentage: number;
   isLiquidityPool?: boolean;
+  tokenAmounts?: Record<string, string>;
+  isBurnAddress?: boolean;
+}
+
+interface Pool {
+  contractId: number;
+  tokAId: string;
+  tokBId: string;
+  symbolA: string;
+  symbolB: string;
+}
+
+interface TokenBalance {
+  contractId: number;
+  balance: string;
+  symbol: string;
+  decimals: number;
 }
 
 interface HoldersTableProps {
@@ -57,6 +84,19 @@ interface HoldersTableProps {
     symbol: string;
   };
 }
+
+interface LPDetails {
+  address: string;
+  holders: Holder[];
+  loading: boolean;
+  page: number;
+  totalHolders: number;
+  poolTokens?: Record<string, TokenBalance>;
+}
+
+const MAX_UINT256 = new BigNumber(
+  "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+);
 
 const HoldersTable = ({
   contractId,
@@ -80,6 +120,12 @@ const HoldersTable = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showEnVoi, setShowEnVoi] = useState(true);
   const [enVoiNames, setEnVoiNames] = useState<Record<string, string>>({});
+  const [knownLiquidityPools, setKnownLiquidityPools] = useState<
+    Map<string, number>
+  >(new Map());
+  const [expandedLP, setExpandedLP] = useState<string | null>(null);
+  const [lpDetails, setLPDetails] = useState<LPDetails | null>(null);
+  const LP_ROWS_PER_PAGE = 10;
 
   const formatAddress = (address: string) => {
     if (!address) return "";
@@ -225,7 +271,10 @@ const HoldersTable = ({
         filteredHolders
       ).map((holder: Holder) => ({
         ...holder,
-        isLiquidityPool: liquidityPools.has(holder.address),
+        // Check both manually marked and known liquidity pools
+        isLiquidityPool:
+          liquidityPools.has(holder.address) ||
+          knownLiquidityPools.has(holder.address),
       }));
 
       const headers = [
@@ -343,10 +392,12 @@ const HoldersTable = ({
       }
 
       const names: Record<string, string> = {};
-      
+
       // Process each batch
       for (const batch of batches) {
-        const response = await fetch(`https://api.envoi.sh/api/name/${batch.join(',')}`);
+        const response = await fetch(
+          `https://api.envoi.sh/api/name/${batch.join(",")}`
+        );
         const data = await response.json();
         data.results?.forEach((result: any) => {
           if (result.name) {
@@ -354,11 +405,395 @@ const HoldersTable = ({
           }
         });
       }
-      
+
       setEnVoiNames(names);
     } catch (error) {
       console.error("Error fetching enVoi names:", error);
     }
+  };
+
+  const fetchLiquidityPools = async () => {
+    try {
+      const response = await fetch(
+        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/pools?tokenId=${contractId}`
+      );
+      const data = await response.json();
+
+      // Create a new Map to store addresses and their corresponding appIds
+      const poolsMap = new Map<string, number>();
+
+      data.pools.forEach((pool: Pool) => {
+        const address = algosdk.getApplicationAddress(pool.contractId);
+        poolsMap.set(address.toString(), pool.contractId);
+      });
+
+      setKnownLiquidityPools(poolsMap);
+
+      // Automatically mark known pools
+      poolsMap.forEach((_, address) => {
+        if (!liquidityPools.has(address)) {
+          toggleLiquidityPool(address);
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching liquidity pools:", error);
+    }
+  };
+
+  const fetchLPHolders = async (lpAddress: string, page: number = 1) => {
+    try {
+      setLPDetails((prev) => ({
+        ...prev,
+        address: lpAddress,
+        holders: [],
+        loading: true,
+        page,
+        totalHolders: prev?.totalHolders ?? 0,
+      }));
+
+      const appId = knownLiquidityPools.get(lpAddress);
+
+      if (!appId) {
+        throw new Error("Application ID not found for address");
+      }
+
+      // Fetch LP token balances
+      const balancesResponse = await fetch(
+        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?accountId=${lpAddress}`
+      );
+      const balancesData = await balancesResponse.json();
+
+      // Get pool token balances
+      const tokenBalances = balancesData.balances.reduce(
+        (acc: Record<string, TokenBalance>, bal: any) => {
+          acc[bal.contractId] = {
+            contractId: bal.contractId,
+            balance: bal.balance,
+            symbol: bal.symbol,
+            decimals: bal.decimals,
+          };
+          return acc;
+        },
+        {}
+      );
+
+      const poolTokenBalance = tokenBalances[appId];
+      const totalSupply = MAX_UINT256.minus(
+        new BigNumber(poolTokenBalance.balance)
+      ).toNumber();
+
+      // Fetch LP holders
+      const response = await fetch(
+        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${appId}&limit=${LP_ROWS_PER_PAGE}&offset=${
+          (page - 1) * LP_ROWS_PER_PAGE
+        }`
+      );
+      const data = await response.json();
+
+      if (!data.balances) {
+        throw new Error("No balances found");
+      }
+
+      // Filter out excluded addresses
+      const excludeAddresses = [
+        Address.zeroAddress.toString(),
+        algosdk.getApplicationAddress(appId).toString(),
+      ];
+      const filteredBalances = data.balances.filter(
+        (h: any) => !excludeAddresses.includes(h.accountId)
+      );
+
+      const lpHolders = filteredBalances.map((h: any) => {
+        const balance = new BigNumber(h.balance);
+        const percentage = balance
+          .div(new BigNumber(totalSupply))
+          .times(100)
+          .toNumber();
+
+        // Calculate if this is likely a burn address by checking if balance is close to MAX_UINT256
+        const diffFromMax = MAX_UINT256.minus(balance);
+        const isBurnAddress = diffFromMax.isLessThan(new BigNumber(1000)); // Threshold for considering it a burn
+
+        // Calculate underlying token amounts for each token in the pool
+        const tokenAmounts = Object.values(tokenBalances).reduce<
+          Record<string, string>
+        >((acc: Record<string, string>, token: unknown) => {
+          const tokenBalance = token as TokenBalance;
+          if (tokenBalance.contractId !== appId) {
+            // Skip LP token itself
+            // Handle case where total supply is 0 to avoid division by zero
+            const amount =
+              totalSupply === 0
+                ? "0"
+                : new BigNumber(h.balance)
+                    .div(totalSupply)
+                    .times(tokenBalance.balance)
+                    .div(new BigNumber(10).pow(tokenBalance.decimals))
+                    .toFixed(tokenBalance.decimals);
+            acc[tokenBalance.symbol] = amount;
+          }
+          return acc;
+        }, {});
+
+        return {
+          address: h.accountId,
+          balance: balance.div(new BigNumber(10).pow(6)).toString(),
+          rawBalance: balance.toString(),
+          percentage: totalSupply === 0 ? 0 : percentage,
+          tokenAmounts,
+          isBurnAddress,
+          diffFromMax: diffFromMax.toString(),
+        };
+      });
+
+      setLPDetails({
+        address: lpAddress,
+        holders: lpHolders,
+        loading: false,
+        page,
+        totalHolders: data.total,
+        poolTokens: tokenBalances,
+      });
+    } catch (error) {
+      console.error("Error fetching LP holders:", error);
+      setLPDetails(null);
+    }
+  };
+
+  console.log({ lpDetails });
+
+  const handleLPClick = async (address: string) => {
+    if (expandedLP === address) {
+      setExpandedLP(null);
+      setLPDetails(null);
+    } else {
+      setExpandedLP(address);
+      await fetchLPHolders(address);
+    }
+  };
+
+  const renderLPPagination = () => {
+    if (!lpDetails) return null;
+
+    const totalPages = Math.ceil(lpDetails.totalHolders / LP_ROWS_PER_PAGE);
+
+    return (
+      <Flex justify="center" align="center" mt={4} gap={2}>
+        <Button
+          size="xs"
+          onClick={() => fetchLPHolders(lpDetails.address, lpDetails.page - 1)}
+          isDisabled={lpDetails.page === 1}
+        >
+          Previous
+        </Button>
+        <Text fontSize="sm">
+          Page {lpDetails.page} of {totalPages}
+        </Text>
+        <Button
+          size="xs"
+          onClick={() => fetchLPHolders(lpDetails.address, lpDetails.page + 1)}
+          isDisabled={lpDetails.page >= totalPages}
+        >
+          Next
+        </Button>
+      </Flex>
+    );
+  };
+
+  const renderLPDetails = () => {
+    if (!lpDetails) return null;
+
+    if (lpDetails.loading) {
+      return (
+        <Tr>
+          <Td colSpan={showExportOptions ? 6 : 4}>
+            <Flex justify="center" py={4}>
+              <Spinner size="sm" />
+            </Flex>
+          </Td>
+        </Tr>
+      );
+    }
+
+    // Get token symbols excluding the LP token
+    const tokenSymbols = Object.values(lpDetails.poolTokens || {})
+      .filter(
+        (token) =>
+          token.contractId !== knownLiquidityPools.get(lpDetails.address)
+      )
+      .map((token) => token.symbol);
+
+    return (
+      <Tr>
+        <Td colSpan={showExportOptions ? 6 : 4}>
+          <Box pl={8} pr={4} py={4} overflowX="auto">
+            <Text fontSize="sm" fontWeight="medium" mb={3}>
+              LP Token Holders
+            </Text>
+            <Table size="sm" variant="simple" style={{ tableLayout: "fixed" }}>
+              <Thead>
+                <Tr>
+                  <Th fontSize="xs" width="200px" whiteSpace="nowrap">
+                    Address
+                  </Th>
+                  <Th fontSize="xs" isNumeric width="150px" whiteSpace="nowrap">
+                    LP Balance
+                  </Th>
+                  <Th fontSize="xs" isNumeric width="100px" whiteSpace="nowrap">
+                    %
+                  </Th>
+                  {tokenSymbols.map((symbol) => (
+                    <Th
+                      key={symbol}
+                      fontSize="xs"
+                      isNumeric
+                      width="150px"
+                      whiteSpace="nowrap"
+                    >
+                      {symbol}
+                    </Th>
+                  ))}
+                </Tr>
+              </Thead>
+              <Tbody>
+                {lpDetails.holders.map((holder) => (
+                  <Tr
+                    key={holder.address}
+                    bg={
+                      holder.isBurnAddress
+                        ? useColorModeValue("red.50", "red.900")
+                        : undefined
+                    }
+                  >
+                    <Td fontSize="sm" whiteSpace="nowrap">
+                      <Flex align="center" gap={2}>
+                        {renderAddressCell(holder)}
+                        {holder.isBurnAddress && (
+                          <Badge colorScheme="red" fontSize="xs">
+                            BURN
+                          </Badge>
+                        )}
+                      </Flex>
+                    </Td>
+                    <Td fontSize="sm" isNumeric whiteSpace="nowrap">
+                      {holder.balance}
+                    </Td>
+                    <Td fontSize="sm" isNumeric whiteSpace="nowrap">
+                      {holder.percentage.toFixed(2)}%
+                    </Td>
+                    {tokenSymbols.map((symbol) => (
+                      <Td
+                        key={symbol}
+                        fontSize="sm"
+                        isNumeric
+                        whiteSpace="nowrap"
+                      >
+                        {holder.tokenAmounts?.[symbol] ?? "0"}
+                      </Td>
+                    ))}
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+            {renderLPPagination()}
+          </Box>
+        </Td>
+      </Tr>
+    );
+  };
+
+  const renderTableRow = (holder: Holder, index: number) => {
+    const isLP =
+      liquidityPools.has(holder.address) ||
+      knownLiquidityPools.has(holder.address);
+    const isExpanded = expandedLP === holder.address;
+
+    return (
+      <>
+        <Tr
+          key={holder.address}
+          onClick={() => isLP && handleLPClick(holder.address)}
+          _hover={{ bg: useColorModeValue("gray.50", "gray.700") }}
+          transition="background-color 0.2s"
+          cursor={isLP ? "pointer" : "default"}
+        >
+          <Td
+            py={2}
+            color={useColorModeValue("gray.600", "gray.400")}
+            fontSize="sm"
+          >
+            <Flex align="center">
+              {isLP && (
+                <Icon
+                  as={isExpanded ? ChevronUpIcon : ChevronDownIcon}
+                  mr={2}
+                  transition="transform 0.2s"
+                />
+              )}
+              #{(page - 1) * rowsPerPage + index + 1}
+            </Flex>
+          </Td>
+          <Td py={2}>{renderAddressCell(holder)}</Td>
+          <Td
+            py={2}
+            isNumeric
+            fontSize="sm"
+            color={useColorModeValue("gray.600", "gray.400")}
+          >
+            {holder.balance}
+          </Td>
+          <Td
+            py={2}
+            isNumeric
+            fontSize="sm"
+            color={useColorModeValue("gray.600", "gray.400")}
+          >
+            {(holder.percentage || 0).toFixed(2)}%
+          </Td>
+          {showExportOptions && (
+            <>
+              <Td py={2}>
+                <Button
+                  size="xs"
+                  variant={
+                    excludedAddresses.has(holder.address) ? "solid" : "outline"
+                  }
+                  colorScheme={
+                    excludedAddresses.has(holder.address) ? "red" : "gray"
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleAddressExclusion(holder.address);
+                  }}
+                >
+                  {excludedAddresses.has(holder.address)
+                    ? "Excluded"
+                    : "Include"}
+                </Button>
+              </Td>
+              <Td py={2}>
+                <Button
+                  size="xs"
+                  variant={
+                    liquidityPools.has(holder.address) ? "solid" : "outline"
+                  }
+                  colorScheme={
+                    liquidityPools.has(holder.address) ? "purple" : "gray"
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleLiquidityPool(holder.address);
+                  }}
+                >
+                  {liquidityPools.has(holder.address) ? "LP" : "Mark as LP"}
+                </Button>
+              </Td>
+            </>
+          )}
+        </Tr>
+        {isExpanded && renderLPDetails()}
+      </>
+    );
   };
 
   console.log(enVoiNames);
@@ -438,6 +873,10 @@ const HoldersTable = ({
       fetchEnVoiNames(holders.map((h) => h.address));
     }
   }, [holders, showEnVoi]);
+
+  useEffect(() => {
+    fetchLiquidityPools();
+  }, [contractId]);
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
@@ -690,6 +1129,37 @@ const HoldersTable = ({
     </Stack>
   );
 
+  const renderAddressCell = (holder: Holder) => {
+    const isLP = knownLiquidityPools.has(holder.address);
+
+    return (
+      <Flex align="center" gap={1}>
+        <RouterLink to={`/account/${holder.address}`}>
+          <Text color="blue.500" fontSize="sm">
+            {showEnVoi && enVoiNames[holder.address]
+              ? enVoiNames[holder.address]
+              : formatAddress(holder.address)}
+          </Text>
+        </RouterLink>
+        {isLP && (
+          <Badge colorScheme="purple" fontSize="xs">
+            LP
+          </Badge>
+        )}
+        <IconButton
+          aria-label="Copy address"
+          icon={<CopyIcon />}
+          size="xs"
+          variant="ghost"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleCopy(holder.address);
+          }}
+        />
+      </Flex>
+    );
+  };
+
   if (loading) {
     return (
       <Box>
@@ -737,25 +1207,7 @@ const HoldersTable = ({
                   <Stack spacing={3}>
                     <Flex justify="space-between" align="center">
                       <Badge colorScheme="purple">#{index + 1}</Badge>
-                      <Flex align="center" gap={2}>
-                        <RouterLink to={`/account/${holder.address}`}>
-                          <Text color="blue.500">
-                            {showEnVoi && enVoiNames[holder.address]
-                              ? enVoiNames[holder.address]
-                              : formatAddress(holder.address)}
-                          </Text>
-                        </RouterLink>
-                        <IconButton
-                          aria-label="Copy address"
-                          icon={<CopyIcon />}
-                          size="xs"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCopy(holder.address);
-                          }}
-                        />
-                      </Flex>
+                      {renderAddressCell(holder)}
                     </Flex>
                     <Divider />
                     <SimpleGrid columns={2} spacing={4}>
@@ -893,102 +1345,7 @@ const HoldersTable = ({
                 </Td>
               </Tr>
             ) : (
-              holders.map((holder, index) => (
-                <Tr
-                  key={holder.address}
-                  _hover={{ bg: useColorModeValue("gray.50", "gray.700") }}
-                  transition="background-color 0.2s"
-                >
-                  <Td
-                    py={2}
-                    color={useColorModeValue("gray.600", "gray.400")}
-                    fontSize="sm"
-                  >
-                    #{(page - 1) * rowsPerPage + index + 1}
-                  </Td>
-                  <Td py={2}>
-                    <Flex align="center" gap={1}>
-                      <RouterLink to={`/account/${holder.address}`}>
-                        <Text color="blue.500" fontSize="sm">
-                          {showEnVoi && enVoiNames[holder.address]
-                            ? enVoiNames[holder.address]
-                            : formatAddress(holder.address)}
-                        </Text>
-                      </RouterLink>
-                      <IconButton
-                        aria-label="Copy address"
-                        icon={<CopyIcon />}
-                        size="xs"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCopy(holder.address);
-                        }}
-                      />
-                    </Flex>
-                  </Td>
-                  <Td
-                    py={2}
-                    isNumeric
-                    fontSize="sm"
-                    color={useColorModeValue("gray.600", "gray.400")}
-                  >
-                    {holder.balance}
-                  </Td>
-                  <Td
-                    py={2}
-                    isNumeric
-                    fontSize="sm"
-                    color={useColorModeValue("gray.600", "gray.400")}
-                  >
-                    {(holder.percentage || 0).toFixed(2)}%
-                  </Td>
-                  {showExportOptions && (
-                    <>
-                      <Td py={2}>
-                        <Button
-                          size="xs"
-                          variant={
-                            excludedAddresses.has(holder.address)
-                              ? "solid"
-                              : "outline"
-                          }
-                          colorScheme={
-                            excludedAddresses.has(holder.address)
-                              ? "red"
-                              : "gray"
-                          }
-                          onClick={() => toggleAddressExclusion(holder.address)}
-                        >
-                          {excludedAddresses.has(holder.address)
-                            ? "Excluded"
-                            : "Include"}
-                        </Button>
-                      </Td>
-                      <Td py={2}>
-                        <Button
-                          size="xs"
-                          variant={
-                            liquidityPools.has(holder.address)
-                              ? "solid"
-                              : "outline"
-                          }
-                          colorScheme={
-                            liquidityPools.has(holder.address)
-                              ? "purple"
-                              : "gray"
-                          }
-                          onClick={() => toggleLiquidityPool(holder.address)}
-                        >
-                          {liquidityPools.has(holder.address)
-                            ? "LP"
-                            : "Mark as LP"}
-                        </Button>
-                      </Td>
-                    </>
-                  )}
-                </Tr>
-              ))
+              holders.map((holder, index) => renderTableRow(holder, index))
             )}
           </Tbody>
         </Table>
