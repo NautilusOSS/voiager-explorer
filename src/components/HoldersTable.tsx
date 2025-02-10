@@ -147,6 +147,20 @@ const HoldersTable = ({
     return amount.toFixed(distributionDecimals);
   };
 
+  const fetchToken = async () => {
+    try {
+      const response = await fetch(
+        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/tokens?contractId=${contractId}`
+      );
+      const data = await response.json();
+      if (data.tokens && data.tokens.length > 0) {
+        setToken(data.tokens[0]);
+      }
+    } catch (error) {
+      console.error("Error fetching token:", error);
+    }
+  };
+
   const fetchAllHolders = async () => {
     if (!token) return [];
 
@@ -311,20 +325,6 @@ const HoldersTable = ({
   };
 
   useEffect(() => {
-    const fetchToken = async () => {
-      try {
-        const response = await fetch(
-          `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/tokens?contractId=${contractId}`
-        );
-        const data = await response.json();
-        if (data.tokens && data.tokens.length > 0) {
-          setToken(data.tokens[0]);
-        }
-      } catch (error) {
-        console.error("Error fetching token:", error);
-      }
-    };
-
     fetchToken();
   }, [contractId]);
 
