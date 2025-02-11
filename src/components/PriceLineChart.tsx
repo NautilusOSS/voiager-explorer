@@ -5,7 +5,6 @@ import {
   Flex,
   FormControl,
   Heading,
-  Image,
   InputGroup,
   InputLeftAddon,
   Select,
@@ -337,12 +336,12 @@ const PriceLineChart: React.FC<PriceLineChartProps> = ({
               cursor="pointer"
               _hover={{ opacity: 0.8 }}
             >
-              <Image
+              {/*<Image
                 src="https://voi.humble.sh/logo.png"
                 alt="Humble"
                 height="24px"
                 title="Available on Humble"
-              />
+              />*/}
             </Box>
           </>
         )}

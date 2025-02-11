@@ -53,6 +53,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ExternalLinkIcon,
+  RepeatIcon,
 } from "@chakra-ui/icons";
 import { useToast } from "@chakra-ui/react";
 import algosdk, { Address } from "algosdk";
@@ -81,6 +82,7 @@ import PriceCandleChart from "../components/PriceCandleChart";
 import HoldersTable from "../components/HoldersTable";
 import SwapTransactionsTable from "../components/SwapTransactionsTable";
 import { TOKEN_CONFIGS } from "../constants/tokens";
+import PoolInfo from "../components/PoolInfo";
 
 ChartJS.register(
   CategoryScale,
@@ -153,6 +155,11 @@ interface TransferFilters {
   maxTimestamp?: number;
 }
 
+// Add new interface for advertisement visibility
+interface AdvertisementConfig {
+  showAds: boolean;
+}
+
 const Token: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [token, setToken] = useState<Token | null>(null);
@@ -163,7 +170,7 @@ const Token: React.FC = () => {
   const [hasMoreTransfers, setHasMoreTransfers] = useState(true);
   const [transfersPerPage, setTransfersPerPage] = useState(10);
   const [currentTransfersPage, setCurrentTransfersPage] = useState(1);
-  const [, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState(0);
   const [filters, setFilters] = useState<TransferFilters>({});
   const toast = useToast();
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
@@ -240,12 +247,20 @@ const Token: React.FC = () => {
   const [, setPoolHoldersLoading] = useState(false);
   const [chartStyle, setChartStyle] = useState<"line" | "candle">("candle");
   const [holdersPerPage] = useState(100);
+  const [fromAmount, setFromAmount] = useState<string>("");
+  const [toAmount, setToAmount] = useState<string>("");
+  const [swapDirection, setSwapDirection] = useState<"AtoB" | "BtoA">("AtoB");
 
   // Move breakpoint values to component level
   const legendDisplay = useBreakpointValue({ base: false, sm: true });
   const yAxisTickLimit = useBreakpointValue({ base: 5, md: 8 });
   const xAxisTickLimit = useBreakpointValue({ base: 5, md: 10 });
   const xAxisRotation = useBreakpointValue({ base: 45, md: 0 });
+
+  // Add advertisement configuration
+  const [adConfig] = useState<AdvertisementConfig>({
+    showAds: false, // Set this to true to enable ads
+  });
 
   const formatSupply = (supply: string, decimals: number) => {
     if (
@@ -383,7 +398,7 @@ const Token: React.FC = () => {
         const data = await response.json();
         // Calculate both TVL values for each pool
         const poolsWithTVL = data.pools.map((pool: any) => {
-          const tvlVOI = Number(pool.tvlA) + Number(pool.tvlB);
+          const tvlVOI = Number(pool.tvl);
           let tvlUSDC = tvlVOI * voiPrice;
 
           // If this is the USDC/VOI pool, calculate TVL differently
@@ -1292,7 +1307,7 @@ const Token: React.FC = () => {
         ? 900 // 15 minute candles
         : timeRange === "7D"
         ? 3600 // 1 hour candles
-        : 14400; // 4 hour candles for 30D
+        : 14400; // 4 hours for 30D
 
     const candleMap = new Map();
 
@@ -1701,6 +1716,21 @@ const Token: React.FC = () => {
     }
   };
 
+  // Add handler for swap direction toggle
+  const handleSwapDirection = () => {
+    setSwapDirection((prev) => (prev === "AtoB" ? "BtoA" : "AtoB"));
+    // Swap the values
+    setFromAmount(toAmount);
+    setToAmount(fromAmount);
+  };
+
+  // Update the tab change handler to include chart data fetching for initial load
+  useEffect(() => {
+    if (activeTab === 2 && selectedPool) {
+      fetchPriceData();
+    }
+  }, [activeTab, selectedPool]); // Add activeTab as dependency
+
   if (loading) {
     return (
       <Flex justify="center" align="center" minH="200px">
@@ -1835,9 +1865,33 @@ const Token: React.FC = () => {
           </CardBody>
         </Card>
 
+        {id && <PoolInfo contractId={id} />}
+
+        {/* First Ad Placement - Top Banner */}
+        {adConfig.showAds && (
+          <Box
+            as="aside"
+            p={4}
+            borderWidth="1px"
+            borderRadius="lg"
+            borderStyle="dashed"
+            borderColor={useColorModeValue("gray.200", "gray.700")}
+            bg={useColorModeValue("gray.50", "gray.800")}
+            textAlign="center"
+          >
+            <Text color="gray.500">Advertisement</Text>
+            {/* Add your ad component or code here */}
+          </Box>
+        )}
+
         <Card>
           <CardBody>
-            <Tabs onChange={handleTabChange} isFitted variant="enclosed">
+            <Tabs
+              onChange={handleTabChange}
+              isFitted
+              variant="enclosed"
+              defaultIndex={2}
+            >
               <TabList mb={4} pb={4}>
                 <Tab>Top Holders</Tab>
                 <Tab>Transfers</Tab>
@@ -1845,7 +1899,25 @@ const Token: React.FC = () => {
               </TabList>
 
               <TabPanels>
-                <TabPanel px={0}>
+                <TabPanel tabIndex={0} px={0}>
+                  {/* Second Ad Placement - Before Holders Table */}
+                  {adConfig.showAds && (
+                    <Box
+                      as="aside"
+                      p={4}
+                      mb={4}
+                      borderWidth="1px"
+                      borderRadius="lg"
+                      borderStyle="dashed"
+                      borderColor={useColorModeValue("gray.200", "gray.700")}
+                      bg={useColorModeValue("gray.50", "gray.800")}
+                      textAlign="center"
+                    >
+                      <Text color="gray.500">Advertisement</Text>
+                      {/* Add your ad component here */}
+                    </Box>
+                  )}
+
                   {id && (
                     <HoldersTable
                       contractId={id}
@@ -1860,7 +1932,7 @@ const Token: React.FC = () => {
                   )}
                 </TabPanel>
 
-                <TabPanel px={0}>
+                <TabPanel tabIndex={1} px={0}>
                   <Stack spacing={4}>
                     <Card>
                       <CardBody>
@@ -2040,7 +2112,7 @@ const Token: React.FC = () => {
                   </Stack>
                 </TabPanel>
 
-                <TabPanel px={0}>
+                <TabPanel tabIndex={2} px={0}>
                   <Stack spacing={4}>
                     <Flex justify="space-between" wrap="wrap" gap={4}>
                       <ButtonGroup size="sm" isAttached variant="outline">
@@ -2115,6 +2187,23 @@ const Token: React.FC = () => {
                       </ButtonGroup>
                     </Flex>
 
+                    {/* Third Ad Placement - Before Chart */}
+                    {adConfig.showAds && (
+                      <Box
+                        as="aside"
+                        p={4}
+                        borderWidth="1px"
+                        borderRadius="lg"
+                        borderStyle="dashed"
+                        borderColor={useColorModeValue("gray.200", "gray.700")}
+                        bg={useColorModeValue("gray.50", "gray.800")}
+                        textAlign="center"
+                      >
+                        <Text color="gray.500">Advertisement</Text>
+                        {/* Add your ad component here */}
+                      </Box>
+                    )}
+
                     <Card>
                       <CardBody
                         bgGradient={useColorModeValue(
@@ -2125,37 +2214,333 @@ const Token: React.FC = () => {
                       >
                         {chartType === "price" ? (
                           <Stack spacing={4}>
-                            {chartStyle === "line" ? (
-                              <PriceLineChart
-                                pools={pools}
-                                selectedPool={selectedPool}
-                                setSelectedPool={setSelectedPool}
-                                tvlCurrency={tvlCurrency}
-                                setTvlCurrency={setTvlCurrency}
-                                timeRange={timeRange}
-                                showDataTable={showDataTable}
-                                showHoldersTable={showHoldersTable}
-                                invertedPrice={invertedPrice}
-                                setInvertedPrice={setInvertedPrice}
-                                usdcPool={usdcPool}
-                                currentPrice={currentPrice}
-                              />
-                            ) : (
-                              <PriceCandleChart
-                                pools={pools}
-                                selectedPool={selectedPool}
-                                setSelectedPool={setSelectedPool}
-                                tvlCurrency={tvlCurrency}
-                                setTvlCurrency={setTvlCurrency}
-                                timeRange={timeRange}
-                                showDataTable={showDataTable}
-                                showHoldersTable={showHoldersTable}
-                                invertedPrice={invertedPrice}
-                                setInvertedPrice={setInvertedPrice}
-                                usdcPool={usdcPool}
-                                currentPrice={currentPrice}
-                              />
-                            )}
+                            <Flex
+                              direction={{ base: "column", xl: "row" }}
+                              gap={4}
+                            >
+                              {/* Chart container */}
+                              <Box flex={{ base: "1", xl: "3" }}>
+                                {chartStyle === "line" ? (
+                                  <PriceLineChart
+                                    pools={pools}
+                                    selectedPool={selectedPool}
+                                    setSelectedPool={setSelectedPool}
+                                    tvlCurrency={tvlCurrency}
+                                    setTvlCurrency={setTvlCurrency}
+                                    timeRange={timeRange}
+                                    showDataTable={showDataTable}
+                                    showHoldersTable={showHoldersTable}
+                                    invertedPrice={invertedPrice}
+                                    setInvertedPrice={setInvertedPrice}
+                                    usdcPool={usdcPool}
+                                    currentPrice={currentPrice}
+                                  />
+                                ) : (
+                                  <PriceCandleChart
+                                    pools={pools}
+                                    selectedPool={selectedPool}
+                                    setSelectedPool={setSelectedPool}
+                                    tvlCurrency={tvlCurrency}
+                                    setTvlCurrency={setTvlCurrency}
+                                    timeRange={timeRange}
+                                    showDataTable={showDataTable}
+                                    showHoldersTable={showHoldersTable}
+                                    invertedPrice={invertedPrice}
+                                    setInvertedPrice={setInvertedPrice}
+                                    usdcPool={usdcPool}
+                                    currentPrice={currentPrice}
+                                  />
+                                )}
+                              </Box>
+
+                              {/* Metrics column */}
+                              <Stack
+                                spacing={2}
+                                flex={{ base: "1", xl: "1" }}
+                                minW={{ xl: "280px" }}
+                              >
+                                {/* Add new Symbol info box */}
+                                <Box
+                                  p={3}
+                                  bg={useColorModeValue("white", "gray.800")}
+                                  borderRadius="md"
+                                  boxShadow="sm"
+                                >
+                                  <Stack spacing={2}>
+                                    <Flex
+                                      justify="space-between"
+                                      align="center"
+                                    >
+                                      <Text fontSize="sm" fontWeight="medium">
+                                        Symbol
+                                      </Text>
+                                      <Text fontSize="sm" color="gray.500">
+                                        ID: {token.contractId}
+                                      </Text>
+                                    </Flex>
+                                    <Flex
+                                      justify="space-between"
+                                      align="center"
+                                      gap={2}
+                                    >
+                                      <Text fontSize="lg" fontWeight="bold">
+                                        {token.symbol}
+                                      </Text>
+                                      <ButtonGroup
+                                        size="sm"
+                                        isAttached
+                                        variant="outline"
+                                      >
+                                        <IconButton
+                                          aria-label="Copy Symbol"
+                                          icon={<CopyIcon />}
+                                          onClick={() =>
+                                            handleCopy(token.symbol)
+                                          }
+                                          size="sm"
+                                        />
+                                        <IconButton
+                                          aria-label="Copy Contract ID"
+                                          icon={<CopyIcon />}
+                                          onClick={() =>
+                                            handleCopy(
+                                              token.contractId.toString()
+                                            )
+                                          }
+                                          size="sm"
+                                        />
+                                      </ButtonGroup>
+                                    </Flex>
+                                  </Stack>
+                                </Box>
+
+                                <Stat
+                                  p={3}
+                                  bg={useColorModeValue("white", "gray.800")}
+                                  borderRadius="md"
+                                  boxShadow="sm"
+                                >
+                                  <StatLabel fontSize="sm">Price</StatLabel>
+                                  <Flex align="baseline" gap={2}>
+                                    <StatNumber fontSize="lg">
+                                      {currentPrice
+                                        ? (1 / currentPrice).toFixed(6)
+                                        : "-"}{" "}
+                                      VOI
+                                    </StatNumber>
+                                    {currentUsdPrice && (
+                                      <StatHelpText margin={0}>
+                                        ($
+                                        {(
+                                          (1 / currentPrice!) *
+                                          currentUsdPrice
+                                        ).toFixed(4)}
+                                        )
+                                      </StatHelpText>
+                                    )}
+                                  </Flex>
+                                </Stat>
+
+                                <Stat
+                                  p={3}
+                                  bg={useColorModeValue("white", "gray.800")}
+                                  borderRadius="md"
+                                  boxShadow="sm"
+                                >
+                                  <StatLabel fontSize="sm">TVL</StatLabel>
+                                  <Flex align="baseline" gap={2}>
+                                    <StatNumber fontSize="lg">
+                                      {selectedPool &&
+                                      pools.find(
+                                        (p) => p.contractId === selectedPool
+                                      )?.tvlVOI
+                                        ? formatLargeNumber(
+                                            pools.find(
+                                              (p) =>
+                                                p.contractId === selectedPool
+                                            )!.tvlVOI
+                                          )
+                                        : "-"}{" "}
+                                      VOI
+                                    </StatNumber>
+                                    {selectedPool &&
+                                      pools.find(
+                                        (p) => p.contractId === selectedPool
+                                      )?.tvlUSDC && (
+                                        <StatHelpText margin={0}>
+                                          ($
+                                          {formatLargeNumber(
+                                            pools.find(
+                                              (p) =>
+                                                p.contractId === selectedPool
+                                            )!.tvlUSDC
+                                          )}
+                                          )
+                                        </StatHelpText>
+                                      )}
+                                  </Flex>
+                                </Stat>
+
+                                {/*<Stat
+                                  p={3}
+                                  bg={useColorModeValue("white", "gray.800")}
+                                  borderRadius="md"
+                                  boxShadow="sm"
+                                >
+                                  <StatLabel fontSize="sm">
+                                    24h Volume
+                                  </StatLabel>
+                                  <Flex align="baseline" gap={2}>
+                                    <StatNumber fontSize="lg">
+                                      {selectedPool &&
+                                      pools.find(
+                                        (p) => p.contractId === selectedPool
+                                      )?.volume24h
+                                        ? formatLargeNumber(
+                                            pools.find(
+                                              (p) =>
+                                                p.contractId === selectedPool
+                                            )!.volume24h
+                                          )
+                                        : "-"}{" "}
+                                      VOI
+                                    </StatNumber>
+                                    {selectedPool &&
+                                      pools.find(
+                                        (p) => p.contractId === selectedPool
+                                      )?.volumeUSD24h && (
+                                        <StatHelpText margin={0}>
+                                          ($
+                                          {formatLargeNumber(
+                                            pools.find(
+                                              (p) =>
+                                                p.contractId === selectedPool
+                                            )!.volumeUSD24h
+                                          )}
+                                          )
+                                        </StatHelpText>
+                                      )}
+                                  </Flex>
+                                </Stat>*/}
+
+                                {/* Add new swap UI */}
+                                <Box
+                                  p={3}
+                                  bg={useColorModeValue("white", "gray.800")}
+                                  borderRadius="md"
+                                  boxShadow="sm"
+                                >
+                                  <Stack spacing={2}>
+                                    <FormControl>
+                                      <FormLabel fontSize="sm">
+                                        From (
+                                        {swapDirection === "AtoB"
+                                          ? pools.find(
+                                              (p) =>
+                                                p.contractId === selectedPool
+                                            )?.symbolA
+                                          : pools.find(
+                                              (p) =>
+                                                p.contractId === selectedPool
+                                            )?.symbolB}
+                                        )
+                                      </FormLabel>
+                                      <NumberInput
+                                        min={0}
+                                        value={fromAmount}
+                                      >
+                                        <NumberInputField placeholder="0.0" />
+                                        <NumberInputStepper>
+                                          <NumberIncrementStepper />
+                                          <NumberDecrementStepper />
+                                        </NumberInputStepper>
+                                      </NumberInput>
+                                    </FormControl>
+
+                                    <Center>
+                                      <IconButton
+                                        aria-label="Swap tokens"
+                                        icon={<RepeatIcon />}
+                                        size="sm"
+                                        variant="ghost"
+                                        transform="rotate(90deg)"
+                                        onClick={handleSwapDirection}
+                                      />
+                                    </Center>
+
+                                    <FormControl>
+                                      <FormLabel fontSize="sm">
+                                        To (
+                                        {swapDirection === "AtoB"
+                                          ? pools.find(
+                                              (p) =>
+                                                p.contractId === selectedPool
+                                            )?.symbolB
+                                          : pools.find(
+                                              (p) =>
+                                                p.contractId === selectedPool
+                                            )?.symbolA}
+                                        )
+                                      </FormLabel>
+                                      <NumberInput
+                                        min={0}
+                                        value={toAmount}
+                                      >
+                                        <NumberInputField placeholder="0.0" />
+                                        <NumberInputStepper>
+                                          <NumberIncrementStepper />
+                                          <NumberDecrementStepper />
+                                        </NumberInputStepper>
+                                      </NumberInput>
+                                    </FormControl>
+
+                                    {/*currentUsdPrice && fromAmount && (
+                                      <Text
+                                        fontSize="sm"
+                                        color="gray.500"
+                                        textAlign="right"
+                                      >
+                                        ≈ $
+                                        {(
+                                          Number(fromAmount) *
+                                          (swapDirection === "AtoB"
+                                            ? currentPrice!
+                                            : 1) *
+                                          currentUsdPrice
+                                        ).toFixed(2)}
+                                      </Text>
+                                    )*/}
+                                  </Stack>
+                                </Box>
+
+                                <Button
+                                  colorScheme="blue"
+                                  size="md"
+                                  leftIcon={<RepeatIcon />}
+                                  rightIcon={<ExternalLinkIcon />}
+                                  onClick={() =>
+                                    window.open(
+                                      `https://voi.humble.sh/#/swap?poolId=${selectedPool}`,
+                                      "_blank"
+                                    )
+                                  }
+                                  mt={1}
+                                >
+                                  Trade{" "}
+                                  {
+                                    pools.find(
+                                      (p) => p.contractId === selectedPool
+                                    )?.symbolA
+                                  }
+                                  /
+                                  {
+                                    pools.find(
+                                      (p) => p.contractId === selectedPool
+                                    )?.symbolB
+                                  }
+                                </Button>
+                              </Stack>
+                            </Flex>
 
                             {showDataTable && (
                               <Box mt={4}>
