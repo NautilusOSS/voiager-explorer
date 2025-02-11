@@ -1731,6 +1731,37 @@ const Token: React.FC = () => {
     }
   }, [activeTab, selectedPool]); // Add activeTab as dependency
 
+  // Add these handlers after the handleSwapDirection function
+  const handleFromAmountChange = (valueString: string) => {
+    setFromAmount(valueString);
+    if (selectedPool && currentPrice) {
+      const pool = pools.find(p => p.contractId === selectedPool);
+      if (pool) {
+        const value = Number(valueString);
+        if (swapDirection === "AtoB") {
+          setToAmount(String(value * (1 / currentPrice)));
+        } else {
+          setToAmount(String(value * currentPrice));
+        }
+      }
+    }
+  };
+
+  const handleToAmountChange = (valueString: string) => {
+    setToAmount(valueString);
+    if (selectedPool && currentPrice) {
+      const pool = pools.find(p => p.contractId === selectedPool);
+      if (pool) {
+        const value = Number(valueString);
+        if (swapDirection === "AtoB") {
+          setFromAmount(String(value * currentPrice));
+        } else {
+          setFromAmount(String(value * (1 / currentPrice)));
+        }
+      }
+    }
+  };
+
   if (loading) {
     return (
       <Flex justify="center" align="center" minH="200px">
@@ -2448,6 +2479,7 @@ const Token: React.FC = () => {
                                       <NumberInput
                                         min={0}
                                         value={fromAmount}
+                                        onChange={handleFromAmountChange}
                                       >
                                         <NumberInputField placeholder="0.0" />
                                         <NumberInputStepper>
@@ -2485,6 +2517,7 @@ const Token: React.FC = () => {
                                       <NumberInput
                                         min={0}
                                         value={toAmount}
+                                        onChange={handleToAmountChange}
                                       >
                                         <NumberInputField placeholder="0.0" />
                                         <NumberInputStepper>
