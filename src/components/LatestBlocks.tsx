@@ -41,16 +41,16 @@ const LatestBlocks: React.FC = () => {
   useEffect(() => {
     const fetchBlocks = async () => {
       try {
-        const response = await getLatestBlocks(20);
-        
+        const response = await getLatestBlocks(10);
+
         const blocksWithTransactions = response.blocks.filter(
-          block => block.block.payset.length > 0
+          (block) => block.block.payset.length > 0
         );
-        
+
         const filteredBlocks = blocksWithTransactions.slice(0, 10);
-        
+
         setBlocks(filteredBlocks);
-        
+
         const latestBlock = response.blocks[0]?.block.header.round;
         dispatch({
           type: "UPDATE_STATS",
@@ -65,7 +65,7 @@ const LatestBlocks: React.FC = () => {
         console.error("Error:", error);
       }
     };
-    
+
     fetchBlocks();
   }, [dispatch]);
 
@@ -98,16 +98,12 @@ const LatestBlocks: React.FC = () => {
                   Looking for Blocks
                 </Text>
                 <Text color="gray.500">
-                  We're scanning the blockchain for blocks with transactions. 
+                  We're scanning the blockchain for blocks with transactions.
                   The network might be taking a breather!
                 </Text>
-                <Box
-                  fontSize="sm"
-                  color="gray.500"
-                  fontStyle="italic"
-                  mt={2}
-                >
-                  Fun fact: Empty blocks help maintain network timing even when there are no transactions.
+                <Box fontSize="sm" color="gray.500" fontStyle="italic" mt={2}>
+                  Fun fact: Empty blocks help maintain network timing even when
+                  there are no transactions.
                 </Box>
               </Stack>
             </CardBody>
@@ -126,10 +122,10 @@ const LatestBlocks: React.FC = () => {
         <Stack spacing={4} w="100%">
           <AnimatePresence>
             {blocks.map((block, index) => (
-              <RouterLink 
-                to={`/block/${block.block.header.round}`} 
+              <RouterLink
+                to={`/block/${block.block.header.round}`}
                 key={block.block.header.round.toString()}
-                style={{ width: '100%' }}
+                style={{ width: "100%" }}
               >
                 <MotionCard
                   w="100%"
@@ -147,11 +143,17 @@ const LatestBlocks: React.FC = () => {
                   style={{ transition: "all 0.2s ease-in-out" }}
                 >
                   <CardHeader pb={2}>
-                    <Heading size="md">Block {block.block.header.round.toString()}</Heading>
+                    <Heading size="md">
+                      Block {block.block.header.round.toString()}
+                    </Heading>
                   </CardHeader>
                   <CardBody pt={0}>
                     <StatGroup>
-                      <Stack spacing={4} direction={{ base: "column", sm: "row" }} w="100%">
+                      <Stack
+                        spacing={4}
+                        direction={{ base: "column", sm: "row" }}
+                        w="100%"
+                      >
                         <Stat>
                           <StatLabel>Transactions</StatLabel>
                           <StatNumber>{block.block.payset.length}</StatNumber>
