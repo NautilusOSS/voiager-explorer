@@ -67,8 +67,6 @@ const LatestBlocks: React.FC = () => {
     };
     
     fetchBlocks();
-    const interval = setInterval(fetchBlocks, 5000);
-    return () => clearInterval(interval);
   }, [dispatch]);
 
   if (blocks.length === 0) {

@@ -209,8 +209,6 @@ const LatestTransactions: React.FC = () => {
     };
 
     fetchTransactions();
-    const interval = setInterval(fetchTransactions, 5000);
-    return () => clearInterval(interval);
   }, []);
 
   const renderTransaction = (tx: Transaction, index: number) => {
@@ -310,9 +308,7 @@ const LatestTransactions: React.FC = () => {
     );
   };
 
-  if (loading) return <Text>Loading...</Text>;
-
-  if (transactions.length === 0) {
+  if (loading || transactions.length === 0) {
     return (
       <Box w="100%" maxW="1400px" mx="auto">
         <Stack spacing={4} w="100%">
