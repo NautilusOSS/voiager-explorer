@@ -9,6 +9,7 @@ import Transactions from "./pages/Transactions";
 import Blocks from "./pages/Blocks";
 import Accounts from "./pages/Accounts";
 import Account from "./pages/Account";
+import Asset from "./pages/Asset";
 import TopAccounts from "./pages/TopAccounts";
 import Applications from "./pages/Applications";
 import Application from "./pages/Application";
@@ -41,6 +42,7 @@ function App() {
                 <Route path="/transaction/:txId" element={<Transaction />} />
                 <Route path="/transactions" element={<Transactions />} />
                 <Route path="/accounts" element={<Accounts />} />
+                <Route path="/asset/:assetId" element={<Asset />} />
                 <Route path="/applications" element={<Applications />} />
                 <Route path="/top-accounts" element={<TopAccounts />} />
                 <Route path="/account/:address" element={<Account />} />

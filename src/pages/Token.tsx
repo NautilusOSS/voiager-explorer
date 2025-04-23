@@ -1735,7 +1735,7 @@ const Token: React.FC = () => {
   const handleFromAmountChange = (valueString: string) => {
     setFromAmount(valueString);
     if (selectedPool && currentPrice) {
-      const pool = pools.find(p => p.contractId === selectedPool);
+      const pool = pools.find((p) => p.contractId === selectedPool);
       if (pool) {
         const value = Number(valueString);
         if (swapDirection === "AtoB") {
@@ -1750,7 +1750,7 @@ const Token: React.FC = () => {
   const handleToAmountChange = (valueString: string) => {
     setToAmount(valueString);
     if (selectedPool && currentPrice) {
-      const pool = pools.find(p => p.contractId === selectedPool);
+      const pool = pools.find((p) => p.contractId === selectedPool);
       if (pool) {
         const value = Number(valueString);
         if (swapDirection === "AtoB") {
@@ -1955,7 +1955,6 @@ const Token: React.FC = () => {
                       excludeAddresses={[
                         Address.zeroAddress().toString(),
                         algosdk.getApplicationAddress(Number(id)).toString(),
-                        token.creator,
                         ...(TOKEN_CONFIGS[id]?.excludedAddresses || []),
                       ]}
                       distributionAmount={TOKEN_CONFIGS[id]?.distributionAmount}
@@ -2620,7 +2619,6 @@ const Token: React.FC = () => {
                             algosdk
                               .getApplicationAddress(Number(selectedPool))
                               .toString(),
-                            token.creator,
                             ...(TOKEN_CONFIGS[selectedPool.toString()]
                               ?.excludedAddresses || []),
                           ]}

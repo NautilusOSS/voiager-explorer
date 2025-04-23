@@ -17,6 +17,7 @@ import {
 } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
 import { indexerClient } from "../services/algorand";
+import { Transaction as TransactionComponent } from "../components/Transaction";
 
 interface Transaction {
   id: string;
@@ -30,6 +31,10 @@ interface Transaction {
     amount: number;
     receiver: string;
   };
+  applicationTransaction?: {
+    applicationArgs: string[];
+    foreignAssets: number[];
+  };
 }
 
 const Transactions: React.FC = () => {
@@ -37,7 +42,6 @@ const Transactions: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const [nextToken, setNextToken] = useState<string | undefined>();
   const [maxRound, setMaxRound] = useState<number | null>(null);
 
   const formatAddress = (address: string) => {
@@ -74,7 +78,7 @@ const Transactions: React.FC = () => {
     }
   };
 
-  const fetchTransactions = async (next?: string) => {
+  const fetchTransactions = async () => {
     try {
       setLoading(true);
 
@@ -82,13 +86,8 @@ const Transactions: React.FC = () => {
 
       let query = indexerClient
         .searchForTransactions()
-        .limit(20)
         .maxRound(Number(maxRound))
-        .minRound(Math.max(1, Number(maxRound) - 1000));
-
-      if (next) {
-        query = query.nextToken(next);
-      }
+        .minRound(Number(maxRound) - 1000);
 
       const response = await query.do();
 
@@ -97,14 +96,8 @@ const Transactions: React.FC = () => {
         (a, b) => Number(b.confirmedRound) - Number(a.confirmedRound)
       );
 
-      // Append to existing transactions
-      if (next) {
-        setTransactions((prev) => [...prev, ...sortedTransactions]);
-      } else {
-        setTransactions(sortedTransactions);
-      }
+      setTransactions(sortedTransactions);
 
-      setNextToken(response.nextToken);
       setError(null);
     } catch (err) {
       console.error("Error fetching transactions:", err);
@@ -115,15 +108,13 @@ const Transactions: React.FC = () => {
   };
 
   const loadMore = () => {
-    if (nextToken) {
-      fetchTransactions(nextToken);
-    }
+    setMaxRound(maxRound - 1000);
   };
 
   // Initial fetch
   useEffect(() => {
     fetchLastRound().then(() => {
-      fetchTransactions();
+      fetchTransactions(0);
     });
   }, []);
 
@@ -150,6 +141,10 @@ const Transactions: React.FC = () => {
     );
   }
 
+  const renderTransaction = (tx: any) => {
+    return <TransactionComponent compact={true} transaction={tx} />;
+  };
+
   return (
     <Container maxW="8xl" py={8}>
       <Stack spacing={6}>
@@ -158,73 +153,19 @@ const Transactions: React.FC = () => {
         </Text>
 
         <Stack spacing={4}>
-          {transactions.map((tx) => (
-            <Card
-              key={tx.id}
-              onClick={() => handleClick(tx.id)}
-              cursor="pointer"
-              _hover={{
-                transform: "translateY(-2px)",
-                boxShadow: "lg",
-              }}
-              transition="all 0.2s"
-            >
-              <CardBody>
-                <Stack spacing={4}>
-                  <Flex justify="space-between" align="center">
-                    <Box>
-                      <Badge colorScheme={getBadgeColor(tx.txType)} mb={2}>
-                        {formatTxnType(tx.txType)}
-                      </Badge>
-                      <Text fontSize="sm" color="gray.500">
-                        Round: {tx.confirmedRound.toString()}
-                      </Text>
-                    </Box>
-                    <Text fontSize="sm" color="gray.500">
-                      {new Date(tx.roundTime * 1000).toLocaleString()}
-                    </Text>
-                  </Flex>
-
-                  <Divider />
-
-                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <Box>
-                      <Text fontWeight="semibold">From</Text>
-                      <Text fontFamily="mono">{formatAddress(tx.sender)}</Text>
-                    </Box>
-                    {tx.paymentTransaction && (
-                      <Box>
-                        <Text fontWeight="semibold">To</Text>
-                        <Text fontFamily="mono">
-                          {formatAddress(tx.paymentTransaction.receiver)}
-                        </Text>
-                      </Box>
-                    )}
-                  </SimpleGrid>
-
-                  {tx.paymentTransaction && (
-                    <Flex justify="space-between" align="center">
-                      <Text fontWeight="semibold">Amount</Text>
-                      <Text>
-                        {(
-                          Number(tx.paymentTransaction.amount) / 1_000_000
-                        ).toFixed(6)}{" "}
-                        VOI
-                      </Text>
-                    </Flex>
-                  )}
-
-                  <Text fontSize="sm" color="gray.500">
-                    Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
-                  </Text>
-                </Stack>
-              </CardBody>
-            </Card>
-          ))}
+          {transactions.map((tx) => {
+            return (
+              <TransactionComponent
+                key={tx.id}
+                compact={true}
+                transaction={tx}
+              />
+            );
+          })}
         </Stack>
 
-        {nextToken && (
-          <Flex justify="center" pt={4}>
+        <Flex justify="center" pt={4}>
+          {transactions.length > 0 && (
             <Button
               onClick={loadMore}
               isLoading={loading}
@@ -233,8 +174,8 @@ const Transactions: React.FC = () => {
             >
               Load More
             </Button>
-          </Flex>
-        )}
+          )}
+        </Flex>
       </Stack>
     </Container>
   );

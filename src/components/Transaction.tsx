@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   Box,
   Card,
@@ -15,8 +15,14 @@ import {
   useColorModeValue,
   SimpleGrid,
 } from "@chakra-ui/react";
-import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon } from "@chakra-ui/icons";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ExternalLinkIcon,
+  CopyIcon,
+} from "@chakra-ui/icons";
 import { getTransaction } from "../services/algorand";
+import algosdk from "algosdk";
 
 interface ParsedNote {
   client?: string;
@@ -25,12 +31,72 @@ interface ParsedNote {
   raw?: string;
 }
 
-const Transaction: React.FC = () => {
+const AddressDisplay: React.FC<{ address: string }> = ({ address }) => {
+  const handleCopy = () => {
+    navigator.clipboard.writeText(address);
+  };
+  const shortAddress = `${address.slice(0, 10)}...${address.slice(-10)}`;
+  return (
+    <Flex align="center" gap={1}>
+      <Button
+        as="a"
+        href={`/account/${address}`}
+        variant="link"
+        colorScheme="blue"
+      >
+        {shortAddress}
+      </Button>
+      <Button size="xs" variant="ghost" onClick={handleCopy}>
+        <CopyIcon />
+      </Button>
+    </Flex>
+  );
+};
+
+const TransactionContainer: React.FC = () => {
   const { txId } = useParams<{ txId: string }>();
   const [transaction, setTransaction] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // // // fetch
+  useEffect(() => {
+    const fetchTransaction = async () => {
+      const response = await getTransaction(txId || "");
+      setTransaction(response.transaction);
+      setLoading(false);
+    };
+    fetchTransaction();
+  }, [txId]);
+  if (loading)
+    return (
+      <Box pt={8}>
+        <Text>Loading...</Text>
+      </Box>
+    );
+  if (error)
+    return (
+      <Box pt={8}>
+        <Text color="red.500">{error}</Text>
+      </Box>
+    );
+  if (!transaction)
+    return (
+      <Box pt={8}>
+        <Text>Transaction not found</Text>
+      </Box>
+    );
+
+  return <Transaction transaction={transaction} />;
+};
+export const Transaction: React.FC<{
+  transaction: any;
+  compact?: boolean;
+}> = ({ transaction, compact = false }) => {
+  //const { txId } = useParams<{ txId: string }>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showRawData, setShowRawData] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   const bgColor = useColorModeValue("gray.50", "gray.900");
   const borderColor = useColorModeValue("gray.200", "gray.700");
@@ -91,6 +157,58 @@ const Transaction: React.FC = () => {
     );
   };
 
+  const getRelativeTime = (timestamp: number) => {
+    const now = Date.now();
+    const diff = now - timestamp * 1000;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    if (minutes > 0) return `${minutes}m ago`;
+    return "just now";
+  };
+
+  const renderPaymentDetailsCompact = (tx: any) => {
+    return (
+      <Link to={`/transaction/${tx.id}`}>
+        <Card>
+          <CardBody>
+            <Stack spacing={2}>
+              <Flex justify="space-between" align="center">
+                <Badge colorScheme="green">Payment</Badge>
+                <Text fontWeight="bold">
+                  {(Number(tx.paymentTransaction.amount) / 1_000_000).toFixed(
+                    6
+                  )}{" "}
+                  VOI
+                </Text>
+              </Flex>
+              <SimpleGrid columns={2} spacing={2}>
+                <Box>
+                  <Text fontSize="sm" color="gray.500">
+                    From
+                  </Text>
+                  <AddressDisplay address={tx.sender} />
+                </Box>
+                <Box>
+                  <Text fontSize="sm" color="gray.500">
+                    To
+                  </Text>
+                  <AddressDisplay address={tx.paymentTransaction.receiver} />
+                </Box>
+              </SimpleGrid>
+              <Text fontSize="xs" color="gray.500" alignSelf="flex-end">
+                {getRelativeTime(tx.roundTime)}
+              </Text>
+            </Stack>
+          </CardBody>
+        </Card>
+      </Link>
+    );
+  };
+
   const renderPaymentDetails = (tx: any) => {
     return (
       <Card>
@@ -106,7 +224,8 @@ const Transaction: React.FC = () => {
                 </Text>
               </Box>
               <Text fontWeight="bold">
-                {(tx["payment-transaction"].amount / 1_000_000).toFixed(6)} VOI
+                {(Number(tx.paymentTransaction.amount) / 1_000_000).toFixed(6)}{" "}
+                VOI
               </Text>
             </Flex>
             <Divider />
@@ -117,18 +236,675 @@ const Transaction: React.FC = () => {
               </Box>
               <Box>
                 <Text fontWeight="semibold">To</Text>
-                <Text fontFamily="mono">
-                  {tx["payment-transaction"].receiver}
-                </Text>
+                <Text fontFamily="mono">{tx.paymentTransaction.receiver}</Text>
               </Box>
             </SimpleGrid>
-            {tx.note && renderNote(formatNote(tx.note))}
-            <Text fontSize="sm" color="gray.500">
-              Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
-            </Text>
+            <Button
+              onClick={() => setShowDetails(!showDetails)}
+              variant="ghost"
+              rightIcon={showDetails ? <ChevronUpIcon /> : <ChevronDownIcon />}
+              size="sm"
+              alignSelf="flex-start"
+            >
+              {showDetails ? "Hide" : "Show"} Details
+            </Button>
+            {showDetails && (
+              <>
+                {tx.note && renderNote(formatNote(tx.note))}
+                <Stack direction="row" spacing={4} align="center">
+                  <Text fontSize="sm" color="gray.500">
+                    Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
+                  </Text>
+                  <Text fontSize="sm" color="gray.500">
+                    Round:{" "}
+                    <Button
+                      as="a"
+                      href={`/block/${tx.confirmedRound}`}
+                      variant="link"
+                      colorScheme="blue"
+                      size="sm"
+                    >
+                      {tx.confirmedRound.toString()}
+                    </Button>
+                  </Text>
+                  {tx.group && (
+                    <Text fontSize="sm" color="gray.500">
+                      Group:{" "}
+                      <Button
+                        as="a"
+                        href={`/group/${Buffer.from(tx.group).toString(
+                          "base64"
+                        )}`}
+                        variant="link"
+                        colorScheme="blue"
+                        size="sm"
+                      >
+                        {Buffer.from(tx.group).toString("base64")}
+                      </Button>
+                    </Text>
+                  )}
+                  <Text fontSize="sm" color="gray.500">
+                    Time: {new Date(tx.roundTime * 1000).toLocaleString()}
+                  </Text>
+                </Stack>
+              </>
+            )}
           </Stack>
         </CardBody>
       </Card>
+    );
+  };
+  // arc200_transferFrom
+  // arc200_approve
+  const ARC4_SELECTOR_ARC200_APPROVE = "tUIhJQ==";
+  const ARC4_SELECTOR_ARC200_TRANSFER = "2nAluQ==";
+  const ARC4_SELECTOR_WVOI_DEPOSIT = "AiMmfA==";
+  const ARC4_SELECTOR_WVOI_WITHDRAW = "aM+Yzg==";
+  const ARC4_SELECTOR_NOP = "WHWfog==";
+  const renderNop = (tx: any) => {
+    return (
+      <Card>
+        <CardBody>
+          <Stack spacing={4}>
+            <Flex justify="space-between" align="center">
+              <Box>
+                <Badge
+                  colorScheme="purple"
+                  mb={2}
+                  borderLeftRadius="0"
+                  borderTopLeftRadius="0"
+                >
+                  NOP
+                </Badge>
+              </Box>
+            </Flex>
+
+            <Stack spacing={3}>
+              {tx.applicationTransaction.accounts?.length > 0 && (
+                <Box>
+                  <Text fontWeight="semibold" mb={2}>
+                    Accounts
+                  </Text>
+                  {tx.applicationTransaction.accounts.map(
+                    (account: any, index: number) => (
+                      <AddressDisplay
+                        key={index}
+                        address={algosdk.encodeAddress(
+                          Uint8Array.from(Buffer.from(account.publicKey))
+                        )}
+                      />
+                    )
+                  )}
+                </Box>
+              )}
+
+              {tx.applicationTransaction.foreignApps?.length > 0 && (
+                <Box>
+                  <Text fontWeight="semibold" mb={2}>
+                    Foreign Apps
+                  </Text>
+                  <Stack>
+                    {tx.applicationTransaction.foreignApps.map(
+                      (appId: number, index: number) => (
+                        <Button
+                          key={index}
+                          as="a"
+                          href={`/application/${appId.toString()}`}
+                          variant="link"
+                          colorScheme="blue"
+                          size="sm"
+                          alignSelf="flex-start"
+                        >
+                          {appId.toString()}
+                        </Button>
+                      )
+                    )}
+                  </Stack>
+                </Box>
+              )}
+
+              {tx.applicationTransaction.foreignAssets?.length > 0 && (
+                <Box>
+                  <Text fontWeight="semibold" mb={2}>
+                    Foreign Assets
+                  </Text>
+                  <Stack>
+                    {tx.applicationTransaction.foreignAssets.map(
+                      (assetId: number, index: number) => (
+                        <Button
+                          key={index}
+                          as="a"
+                          href={`/asset/${assetId}`}
+                          variant="link"
+                          colorScheme="blue"
+                          size="sm"
+                          alignSelf="flex-start"
+                        >
+                          {assetId}
+                        </Button>
+                      )
+                    )}
+                  </Stack>
+                </Box>
+              )}
+            </Stack>
+          </Stack>
+        </CardBody>
+      </Card>
+    );
+  };
+
+  const renderWVOIWithdrawCompact = (tx: any) => {};
+
+  const renderWVOIWithdraw = (tx: any) => {
+    const who = tx.sender;
+    const [amount] = tx.applicationTransaction.applicationArgs.slice(1);
+    const amountNumber = (
+      Number(BigInt("0x" + Buffer.from(amount).toString("hex"))) / 1_000_000
+    ).toFixed(6);
+    return (
+      <Card>
+        <CardBody>
+          <Stack spacing={4}>
+            <Flex justify="space-between" align="center">
+              <Box>
+                <Badge
+                  colorScheme="green"
+                  mb={2}
+                  borderLeftRadius="0"
+                  borderTopLeftRadius="0"
+                >
+                  ARC200
+                </Badge>
+                <Badge
+                  colorScheme="purple"
+                  mb={2}
+                  borderLeftRadius="0"
+                  borderTopLeftRadius="0"
+                >
+                  WVOI Withdraw
+                </Badge>
+              </Box>
+            </Flex>
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <Box>
+                <Text fontWeight="semibold">Who</Text>
+                <AddressDisplay address={who} />
+              </Box>
+              <Box>
+                <Text fontWeight="semibold">Amount</Text>
+                <Text fontFamily="mono">{amountNumber} VOI</Text>
+              </Box>
+            </SimpleGrid>
+          </Stack>
+        </CardBody>
+      </Card>
+    );
+  };
+  const renderWVOIDeposit = (tx: any) => {
+    const who = tx.sender;
+    const [amount] = tx.applicationTransaction.applicationArgs.slice(1);
+    const amountNumber = (
+      Number(BigInt("0x" + Buffer.from(amount).toString("hex"))) / 1_000_000
+    ).toFixed(6);
+    return (
+      <Card>
+        <CardBody>
+          <Stack spacing={4}>
+            <Flex justify="space-between" align="center">
+              <Box>
+                <Badge
+                  colorScheme="green"
+                  mb={2}
+                  mr="-3px"
+                  borderRightRadius="0"
+                  borderBottomRightRadius="0"
+                >
+                  ARC200
+                </Badge>
+                <Badge
+                  colorScheme="purple"
+                  mb={2}
+                  borderLeftRadius="0"
+                  borderTopLeftRadius="0"
+                >
+                  WVOI Deposit
+                </Badge>
+              </Box>
+              <Text>
+                <Button
+                  as="a"
+                  href={`/token/${tx.applicationTransaction.applicationId}`}
+                  variant="link"
+                  colorScheme="blue"
+                >
+                  View Token
+                </Button>
+              </Text>
+            </Flex>
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <Box>
+                <Text fontWeight="semibold">Who</Text>
+                <AddressDisplay address={who} />
+              </Box>
+              <Box>
+                <Text fontWeight="semibold">Amount</Text>
+                <Text fontFamily="mono">{amountNumber} VOI</Text>
+              </Box>
+            </SimpleGrid>
+          </Stack>
+        </CardBody>
+      </Card>
+    );
+  };
+
+  const renderArc200ApproveCompact = (tx: any) => {
+    const owner = tx.sender;
+    const [spender, amount] =
+      tx.applicationTransaction.applicationArgs.slice(1);
+    const spenderAddress = algosdk.encodeAddress(
+      Uint8Array.from(Buffer.from(spender, "base64"))
+    );
+    const amountNumber = BigInt(
+      "0x" + Buffer.from(amount).toString("hex")
+    ).toString();
+
+    return (
+      <Stack spacing={2}>
+        <Flex justify="space-between" align="center">
+          <Box>
+            <Badge colorScheme="green" mr="-3px" borderRightRadius="0">
+              ARC200
+            </Badge>
+            <Badge colorScheme="purple" borderLeftRadius="0">
+              Approve
+            </Badge>
+          </Box>
+          <Button
+            as="a"
+            href={`/token/${tx.applicationTransaction.applicationId}`}
+            variant="link"
+            colorScheme="blue"
+            size="sm"
+          >
+            View Token
+          </Button>
+        </Flex>
+        <SimpleGrid columns={2} spacing={2}>
+          <Box>
+            <Text fontSize="sm" color="gray.500">
+              Owner
+            </Text>
+            <AddressDisplay address={owner} />
+          </Box>
+          <Box>
+            <Text fontSize="sm" color="gray.500">
+              Spender
+            </Text>
+            <AddressDisplay address={spenderAddress} />
+          </Box>
+        </SimpleGrid>
+        <Text fontSize="sm" fontWeight="semibold">
+          Amount: {amountNumber}
+        </Text>
+      </Stack>
+    );
+  };
+
+  const renderArc200Approve = (tx: any) => {
+    const owner = tx.sender;
+    const [spender, amount] =
+      tx.applicationTransaction.applicationArgs.slice(1);
+    const spenderAddress = algosdk.encodeAddress(
+      Uint8Array.from(Buffer.from(spender, "base64"))
+    );
+    const amountNumber = BigInt(
+      "0x" + Buffer.from(amount).toString("hex")
+    ).toString();
+    return (
+      <Card>
+        <CardBody>
+          <Stack spacing={4}>
+            <Flex justify="space-between" align="center">
+              <Box>
+                <Badge
+                  colorScheme="green"
+                  mb={2}
+                  mr="-3px"
+                  borderRightRadius="0"
+                  borderBottomRightRadius="0"
+                >
+                  ARC200
+                </Badge>
+                <Badge
+                  colorScheme="purple"
+                  mb={2}
+                  borderLeftRadius="0"
+                  borderTopLeftRadius="0"
+                >
+                  Approve
+                </Badge>
+              </Box>
+              <Text>
+                <Button
+                  as="a"
+                  href={`/token/${tx.applicationTransaction.applicationId}`}
+                  variant="link"
+                  colorScheme="blue"
+                >
+                  View Token
+                </Button>
+              </Text>
+            </Flex>
+            <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+              <Box>
+                <Text fontWeight="semibold">Owner</Text>
+                <AddressDisplay address={owner} />
+              </Box>
+              <Box>
+                <Text fontWeight="semibold">Spender</Text>
+                <AddressDisplay address={spenderAddress} />
+              </Box>
+              <Box>
+                <Text fontWeight="semibold">Amount</Text>
+                <Text fontFamily="mono">{amountNumber}</Text>
+              </Box>
+            </SimpleGrid>
+          </Stack>
+        </CardBody>
+      </Card>
+    );
+  };
+  const renderArc200Transfer = (tx: any) => {
+    const fromAddress = tx.sender;
+    const [to, amount] = tx.applicationTransaction.applicationArgs.slice(1);
+    const toAddress = algosdk.encodeAddress(
+      Uint8Array.from(Buffer.from(to, "base64"))
+    );
+    const amountNumber = BigInt(
+      "0x" + Buffer.from(amount).toString("hex")
+    ).toString();
+    return (
+      <Card>
+        <CardBody>
+          <Stack spacing={4}>
+            <Flex justify="space-between" align="center">
+              <Box>
+                <Badge
+                  colorScheme="green"
+                  mb={2}
+                  mr="-3px"
+                  borderRightRadius="0"
+                  borderBottomRightRadius="0"
+                >
+                  ARC200
+                </Badge>
+                <Badge
+                  colorScheme="purple"
+                  mb={2}
+                  borderLeftRadius="0"
+                  borderTopLeftRadius="0"
+                >
+                  Transfer
+                </Badge>
+              </Box>
+              <Text>
+                <Button
+                  as="a"
+                  href={`/token/${tx.applicationTransaction.applicationId}`}
+                  variant="link"
+                  colorScheme="blue"
+                >
+                  View Token
+                </Button>
+              </Text>
+            </Flex>
+            <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+              <Box>
+                <Text fontWeight="semibold">From</Text>
+                <AddressDisplay address={fromAddress} />
+              </Box>
+              <Box>
+                <Text fontWeight="semibold">To</Text>
+                <AddressDisplay address={toAddress} />
+              </Box>
+              <Box>
+                <Text fontWeight="semibold">Amount</Text>
+                <Text fontFamily="mono">{amountNumber}</Text>
+              </Box>
+            </SimpleGrid>
+          </Stack>
+        </CardBody>
+      </Card>
+    );
+  };
+  const renderApplicationArgsFallback = (tx: any) => {
+    return (
+      <Box>
+        <Text fontWeight="semibold">Sender</Text>
+        <Text fontFamily="mono">{tx.sender}</Text>
+        <Text fontWeight="semibold">Application Args</Text>
+        <Stack spacing={1}>
+          {tx.applicationTransaction.applicationArgs.map(
+            (arg: string, index: number) => (
+              <Text key={index} fontFamily="mono" fontSize="sm">
+                {Buffer.from(arg).toString("base64")}
+              </Text>
+            )
+          )}
+        </Stack>
+      </Box>
+    );
+  };
+
+  const renderNopCompact = (tx: any) => {
+    return (
+      <Stack spacing={2}>
+        <Flex justify="space-between" align="center">
+          <Box>
+            <Badge colorScheme="purple">NOP</Badge>
+          </Box>
+        </Flex>
+      </Stack>
+    );
+  };
+
+  const renderArc200TransferCompact = (tx: any) => {
+    const fromAddress = tx.sender;
+    const [to, amount] = tx.applicationTransaction.applicationArgs.slice(1);
+    const toAddress = algosdk.encodeAddress(
+      Uint8Array.from(Buffer.from(to, "base64"))
+    );
+    const amountNumber = BigInt(
+      "0x" + Buffer.from(amount).toString("hex")
+    ).toString();
+
+    return (
+      <Stack spacing={2}>
+        <Flex justify="space-between" align="center">
+          <Box>
+            <Badge colorScheme="green" mr="-3px" borderRightRadius="0">
+              ARC200
+            </Badge>
+            <Badge colorScheme="purple" borderLeftRadius="0">
+              Transfer
+            </Badge>
+          </Box>
+          <Button
+            as="a"
+            href={`/token/${tx.applicationTransaction.applicationId}`}
+            variant="link"
+            colorScheme="blue"
+            size="sm"
+          >
+            View Token
+          </Button>
+        </Flex>
+        <SimpleGrid columns={2} spacing={2}>
+          <Box>
+            <Text fontSize="sm" color="gray.500">
+              From
+            </Text>
+            <AddressDisplay address={fromAddress} />
+          </Box>
+          <Box>
+            <Text fontSize="sm" color="gray.500">
+              To
+            </Text>
+            <AddressDisplay address={toAddress} />
+          </Box>
+        </SimpleGrid>
+        <Text fontSize="sm" fontWeight="semibold">
+          {amountNumber}
+        </Text>
+      </Stack>
+    );
+  };
+
+  const renderWVOIDepositCompact = (tx: any) => {
+    const who = tx.sender;
+    const [amount] = tx.applicationTransaction.applicationArgs.slice(1);
+    const amountNumber = (
+      Number(BigInt("0x" + Buffer.from(amount).toString("hex"))) / 1_000_000
+    ).toFixed(6);
+
+    return (
+      <Stack spacing={2}>
+        <Flex justify="space-between" align="center">
+          <Box>
+            <Badge colorScheme="green" mr="-3px" borderRightRadius="0">
+              ARC200
+            </Badge>
+            <Badge colorScheme="purple" borderLeftRadius="0">
+              WVOI Deposit
+            </Badge>
+          </Box>
+        </Flex>
+        <SimpleGrid columns={2} spacing={2}>
+          <Box>
+            <Text fontSize="sm" color="gray.500">
+              Who
+            </Text>
+            <AddressDisplay address={who} />
+          </Box>
+          <Box>
+            <Text fontSize="sm" color="gray.500">
+              Amount
+            </Text>
+            <Text fontSize="sm" fontWeight="semibold">
+              {amountNumber} VOI
+            </Text>
+          </Box>
+        </SimpleGrid>
+      </Stack>
+    );
+  };
+
+  const renderApplicationArgs = (tx: any) => {
+    const mSelector = Buffer.from(
+      tx.applicationTransaction.applicationArgs[0]
+    ).toString("base64");
+
+    if (compact) {
+      switch (mSelector) {
+        case ARC4_SELECTOR_ARC200_TRANSFER:
+          return renderArc200TransferCompact(tx);
+        case ARC4_SELECTOR_ARC200_APPROVE:
+          return renderArc200ApproveCompact(tx);
+        case ARC4_SELECTOR_WVOI_DEPOSIT:
+          return renderWVOIDepositCompact(tx);
+        case ARC4_SELECTOR_NOP:
+          return renderNopCompact(tx);
+        default:
+          return (
+            <Stack spacing={2}>
+              <Badge colorScheme="purple">Application Call</Badge>
+              <Text fontSize="sm">
+                App ID: {tx.applicationTransaction.applicationId}
+              </Text>
+            </Stack>
+          );
+      }
+    }
+
+    // Existing non-compact rendering logic
+    switch (mSelector) {
+      case ARC4_SELECTOR_ARC200_TRANSFER:
+        return renderArc200Transfer(tx);
+      case ARC4_SELECTOR_ARC200_APPROVE:
+        return renderArc200Approve(tx);
+      case ARC4_SELECTOR_WVOI_DEPOSIT:
+        return renderWVOIDeposit(tx);
+      case ARC4_SELECTOR_WVOI_WITHDRAW:
+        return renderWVOIWithdraw(tx);
+      case ARC4_SELECTOR_NOP:
+        return renderNop(tx);
+      default:
+        return renderApplicationArgsFallback(tx);
+    }
+  };
+
+  const renderApplicationCallCompact = (tx: any) => {
+    const mSelector = tx.applicationTransaction.applicationArgs?.[0]
+      ? Buffer.from(tx.applicationTransaction.applicationArgs[0]).toString(
+          "base64"
+        )
+      : null;
+
+    const isIdentifiedCall = [
+      ARC4_SELECTOR_ARC200_TRANSFER,
+      ARC4_SELECTOR_ARC200_APPROVE,
+      ARC4_SELECTOR_WVOI_DEPOSIT,
+      ARC4_SELECTOR_NOP,
+    ].includes(mSelector || "");
+
+    return (
+      <Link to={`/transaction/${tx.id}`}>
+        <Card>
+          <CardBody>
+            <Stack spacing={2}>
+              <Flex justify="space-between" align="center">
+                <Box>
+                  <Badge colorScheme="purple">Application Call</Badge>
+                </Box>
+                <Button
+                  as="a"
+                  href={`/application/${tx.applicationTransaction.applicationId}`}
+                  variant="link"
+                  colorScheme="blue"
+                  size="sm"
+                >
+                  App #
+                  {tx.applicationTransaction.applicationId?.toString() ||
+                    "Create"}
+                </Button>
+              </Flex>
+              {!isIdentifiedCall && mSelector && (
+                <SimpleGrid columns={2} spacing={2}>
+                  <Box>
+                    <Text fontSize="sm" color="gray.500">
+                      Sender
+                    </Text>
+                    <AddressDisplay address={tx.sender} />
+                  </Box>
+                  <Box>
+                    <Text fontSize="sm" color="gray.500">
+                      Method
+                    </Text>
+                    <Text fontSize="sm" fontFamily="mono">
+                      {mSelector}
+                    </Text>
+                  </Box>
+                </SimpleGrid>
+              )}
+              {renderApplicationArgs(tx)}
+              <Text fontSize="xs" color="gray.500" alignSelf="flex-end">
+                {getRelativeTime(tx.roundTime)}
+              </Text>
+            </Stack>
+          </CardBody>
+        </Card>
+      </Link>
     );
   };
 
@@ -148,35 +924,121 @@ const Transaction: React.FC = () => {
               </Box>
               <Text>
                 App ID:{" "}
-                {tx["application-transaction"]["application-id"] || "Create"}
+                <Button
+                  as="a"
+                  href={`/application/${tx.applicationTransaction.applicationId}`}
+                  variant="link"
+                  colorScheme="blue"
+                >
+                  {tx.applicationTransaction.applicationId?.toString() ||
+                    "Create"}
+                </Button>
               </Text>
             </Flex>
-            <Divider />
-            <Box>
-              <Text fontWeight="semibold">From</Text>
-              <Text fontFamily="mono">{tx.sender}</Text>
-            </Box>
-            {tx["application-transaction"]["application-args"] && (
-              <Box>
-                <Text fontWeight="semibold">Application Args</Text>
-                <Stack spacing={1}>
-                  {tx["application-transaction"]["application-args"].map(
-                    (arg: string, index: number) => (
-                      <Text key={index} fontFamily="mono" fontSize="sm">
-                        {Buffer.from(arg, "base64").toString()}
-                      </Text>
-                    )
+            {renderApplicationArgs(tx)}
+            <Button
+              onClick={() => setShowDetails(!showDetails)}
+              variant="ghost"
+              rightIcon={showDetails ? <ChevronUpIcon /> : <ChevronDownIcon />}
+              size="sm"
+              alignSelf="flex-start"
+            >
+              {showDetails ? "Hide" : "Show"} Details
+            </Button>
+            {showDetails && (
+              <Stack>
+                {tx.note && renderNote(formatNote(tx.note))}
+                <Stack direction="row" spacing={4} align="center">
+                  <Text fontSize="sm" color="gray.500">
+                    Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
+                  </Text>
+                  <Text fontSize="sm" color="gray.500">
+                    Round:{" "}
+                    <Button
+                      as="a"
+                      href={`/block/${tx.confirmedRound}`}
+                      variant="link"
+                      colorScheme="blue"
+                      size="sm"
+                    >
+                      {tx.confirmedRound.toString()}
+                    </Button>
+                  </Text>
+                  {tx.group && (
+                    <Text fontSize="sm" color="gray.500">
+                      Group:{" "}
+                      <Button
+                        as="a"
+                        href={`/group/${Buffer.from(tx.group).toString(
+                          "base64"
+                        )}`}
+                        variant="link"
+                        colorScheme="blue"
+                        size="sm"
+                      >
+                        {Buffer.from(tx.group).toString("base64")}
+                      </Button>
+                    </Text>
                   )}
+                  <Text fontSize="sm" color="gray.500">
+                    Time: {new Date(tx.roundTime * 1000).toLocaleString()}
+                  </Text>
                 </Stack>
-              </Box>
+              </Stack>
             )}
-            {tx.note && renderNote(formatNote(tx.note))}
-            <Text fontSize="sm" color="gray.500">
-              Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
-            </Text>
           </Stack>
         </CardBody>
       </Card>
+    );
+  };
+
+  const renderAssetTransferCompact = (tx: any) => {
+    return (
+      <Link to={`/transaction/${tx.id}`}>
+        <Card>
+          <CardBody>
+            <Stack spacing={2}>
+              <Flex justify="space-between" align="center">
+                <Badge colorScheme="blue">Asset Transfer</Badge>
+                <Button
+                  as="a"
+                  href={`/asset/${tx.assetTransferTransaction.assetId}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                  variant="link"
+                  colorScheme="blue"
+                  size="sm"
+                >
+                  Asset #{tx.assetTransferTransaction.assetId.toString()}
+                </Button>
+              </Flex>
+              <SimpleGrid columns={2} spacing={2}>
+                <Box>
+                  <Text fontSize="sm" color="gray.500">
+                    From
+                  </Text>
+                  <AddressDisplay address={tx.sender} />
+                </Box>
+                <Box>
+                  <Text fontSize="sm" color="gray.500">
+                    To
+                  </Text>
+                  <AddressDisplay
+                    address={tx.assetTransferTransaction.receiver}
+                  />
+                </Box>
+              </SimpleGrid>
+              <Text fontSize="sm" fontWeight="semibold">
+                Amount: {tx.assetTransferTransaction.amount.toString()}
+              </Text>
+              <Text fontSize="xs" color="gray.500" alignSelf="flex-end">
+                {getRelativeTime(tx.roundTime)}
+              </Text>
+            </Stack>
+          </CardBody>
+        </Card>
+      </Link>
     );
   };
 
@@ -195,7 +1057,7 @@ const Transaction: React.FC = () => {
                 </Text>
               </Box>
               <Text fontWeight="bold">
-                Asset ID: {tx["asset-transfer-transaction"]["asset-id"]}
+                Asset ID: {tx.assetTransferTransaction.assetId}
               </Text>
             </Flex>
             <Divider />
@@ -207,20 +1069,181 @@ const Transaction: React.FC = () => {
               <Box>
                 <Text fontWeight="semibold">To</Text>
                 <Text fontFamily="mono">
-                  {tx["asset-transfer-transaction"].receiver}
+                  {tx.assetTransferTransaction.receiver}
                 </Text>
               </Box>
             </SimpleGrid>
             <Box>
               <Text fontWeight="semibold">Amount</Text>
-              <Text>
-                {tx["asset-transfer-transaction"].amount.toLocaleString()}
-              </Text>
+              <Text>{tx.assetTransferTransaction.amount.toLocaleString()}</Text>
             </Box>
             {tx.note && renderNote(formatNote(tx.note))}
-            <Text fontSize="sm" color="gray.500">
-              Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
-            </Text>
+            <Button
+              onClick={() => setShowDetails(!showDetails)}
+              variant="ghost"
+              rightIcon={showDetails ? <ChevronUpIcon /> : <ChevronDownIcon />}
+              size="sm"
+              alignSelf="flex-start"
+            >
+              {showDetails ? "Hide" : "Show"} Details
+            </Button>
+            {showDetails && (
+              <Stack direction="row" spacing={4} align="center">
+                <Text fontSize="sm" color="gray.500">
+                  Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
+                </Text>
+                <Text fontSize="sm" color="gray.500">
+                  Round:{" "}
+                  <Button
+                    as="a"
+                    href={`/block/${tx.confirmedRound}`}
+                    variant="link"
+                    colorScheme="blue"
+                    size="sm"
+                  >
+                    {tx.confirmedRound.toString()}
+                  </Button>
+                </Text>
+                {tx.group && (
+                  <Text fontSize="sm" color="gray.500">
+                    Group:{" "}
+                    <Button
+                      as="a"
+                      href={`/group/${Buffer.from(tx.group).toString(
+                        "base64"
+                      )}`}
+                      variant="link"
+                      colorScheme="blue"
+                      size="sm"
+                    >
+                      {Buffer.from(tx.group).toString("base64")}
+                    </Button>
+                  </Text>
+                )}
+                <Text fontSize="sm" color="gray.500">
+                  Time: {new Date(tx.roundTime * 1000).toLocaleString()}
+                </Text>
+              </Stack>
+            )}
+          </Stack>
+        </CardBody>
+      </Card>
+    );
+  };
+
+  const renderStateProofCompact = (tx: any) => {
+    return (
+      <Link to={`/transaction/${tx.id}`}>
+        <Card>
+          <CardBody>
+            <Stack spacing={2}>
+              <Flex justify="space-between" align="center">
+                <Badge colorScheme="orange">State Proof</Badge>
+              </Flex>
+              <SimpleGrid columns={2} spacing={2}>
+                <Box>
+                  <Text fontSize="sm" color="gray.500">
+                    From
+                  </Text>
+                  <AddressDisplay address={tx.sender} />
+                </Box>
+                {/* <Box>
+                  <Text fontSize="sm" color="gray.500">
+                    Message
+                  </Text>
+                  <Text fontSize="sm" fontFamily="mono" isTruncated>
+                    {tx.stateProofTransaction?.message?.toString() || "No message"}
+                  </Text>
+                </Box> */}
+              </SimpleGrid>
+              <Text fontSize="xs" color="gray.500" alignSelf="flex-end">
+                {getRelativeTime(tx.roundTime)}
+              </Text>
+            </Stack>
+          </CardBody>
+        </Card>
+      </Link>
+    );
+  };
+
+  const renderStateProof = (tx: any) => {
+    return (
+      <Card>
+        <CardBody>
+          <Stack spacing={4}>
+            <Flex justify="space-between" align="center">
+              <Box>
+                <Badge colorScheme="orange" mb={2}>
+                  State Proof
+                </Badge>
+                <Text fontFamily="mono" fontSize="sm" color="gray.500">
+                  {tx.id}
+                </Text>
+              </Box>
+            </Flex>
+            <Divider />
+            <Box>
+              <Text fontWeight="semibold">From</Text>
+              <AddressDisplay address={tx.sender} />
+            </Box>
+            {/* {tx.stateProofTransaction?.message && (
+              <Box>
+                <Text fontWeight="semibold">Message</Text>
+                <Text fontFamily="mono">
+                  {tx.stateProofTransaction.message.toString()}
+                </Text>
+              </Box>
+            )} */}
+            <Button
+              onClick={() => setShowDetails(!showDetails)}
+              variant="ghost"
+              rightIcon={showDetails ? <ChevronUpIcon /> : <ChevronDownIcon />}
+              size="sm"
+              alignSelf="flex-start"
+            >
+              {showDetails ? "Hide" : "Show"} Details
+            </Button>
+            {showDetails && (
+              <Stack>
+                {tx.note && renderNote(formatNote(tx.note))}
+                <Stack direction="row" spacing={4} align="center">
+                  <Text fontSize="sm" color="gray.500">
+                    Fee: {(Number(tx.fee) / 1_000_000).toFixed(6)} VOI
+                  </Text>
+                  <Text fontSize="sm" color="gray.500">
+                    Round:{" "}
+                    <Button
+                      as="a"
+                      href={`/block/${tx.confirmedRound}`}
+                      variant="link"
+                      colorScheme="blue"
+                      size="sm"
+                    >
+                      {tx.confirmedRound.toString()}
+                    </Button>
+                  </Text>
+                  {tx.group && (
+                    <Text fontSize="sm" color="gray.500">
+                      Group:{" "}
+                      <Button
+                        as="a"
+                        href={`/group/${Buffer.from(tx.group).toString(
+                          "base64"
+                        )}`}
+                        variant="link"
+                        colorScheme="blue"
+                        size="sm"
+                      >
+                        {Buffer.from(tx.group).toString("base64")}
+                      </Button>
+                    </Text>
+                  )}
+                  <Text fontSize="sm" color="gray.500">
+                    Time: {new Date(tx.roundTime * 1000).toLocaleString()}
+                  </Text>
+                </Stack>
+              </Stack>
+            )}
           </Stack>
         </CardBody>
       </Card>
@@ -230,13 +1253,78 @@ const Transaction: React.FC = () => {
   const renderTransactionDetails = () => {
     if (!transaction) return null;
 
-    switch (transaction["tx-type"]) {
+    if (compact) {
+      switch (transaction.txType) {
+        case "pay":
+          return renderPaymentDetailsCompact(transaction);
+        case "appl":
+          return renderApplicationCallCompact(transaction);
+        case "axfer":
+          return renderAssetTransferCompact(transaction);
+        case "stpf":
+          return renderStateProofCompact(transaction);
+        default:
+          return (
+            <Card>
+              <CardBody>
+                <Stack spacing={2}>
+                  <Flex justify="space-between" align="center">
+                    <Box>
+                      <Badge
+                        colorScheme={getTransactionBadgeColor(
+                          transaction.txType
+                        )}
+                        mb={1}
+                      >
+                        {getTransactionType(transaction.txType)}
+                      </Badge>
+                    </Box>
+                    {transaction.paymentTransaction && (
+                      <Text fontWeight="bold">
+                        {(
+                          Number(transaction.paymentTransaction.amount) /
+                          1_000_000
+                        ).toFixed(6)}{" "}
+                        VOI
+                      </Text>
+                    )}
+                  </Flex>
+                  <SimpleGrid columns={2} spacing={2}>
+                    <Box>
+                      <Text fontSize="sm" color="gray.500">
+                        From
+                      </Text>
+                      <AddressDisplay address={transaction.sender} />
+                    </Box>
+                    <Box>
+                      <Text fontSize="sm" color="gray.500">
+                        To
+                      </Text>
+                      <AddressDisplay
+                        address={
+                          transaction.paymentTransaction?.receiver ||
+                          transaction.assetTransferTransaction?.receiver ||
+                          transaction.sender
+                        }
+                      />
+                    </Box>
+                  </SimpleGrid>
+                </Stack>
+              </CardBody>
+            </Card>
+          );
+      }
+    }
+
+    switch (transaction.txType) {
       case "pay":
         return renderPaymentDetails(transaction);
       case "appl":
         return renderApplicationCall(transaction);
       case "axfer":
         return renderAssetTransfer(transaction);
+      case "stpf":
+        return renderStateProof(transaction);
       default:
         return (
           <Card>
@@ -254,9 +1342,57 @@ const Transaction: React.FC = () => {
                   <Text fontFamily="mono">{transaction.sender}</Text>
                 </Box>
                 {transaction.note && renderNote(formatNote(transaction.note))}
-                <Text fontSize="sm" color="gray.500">
-                  Fee: {(Number(transaction.fee) / 1_000_000).toFixed(6)} VOI
-                </Text>
+                <Button
+                  onClick={() => setShowDetails(!showDetails)}
+                  variant="ghost"
+                  rightIcon={
+                    showDetails ? <ChevronUpIcon /> : <ChevronDownIcon />
+                  }
+                  size="sm"
+                  alignSelf="flex-start"
+                >
+                  {showDetails ? "Hide" : "Show"} Details
+                </Button>
+                {showDetails && (
+                  <Stack direction="row" spacing={4} align="center">
+                    <Text fontSize="sm" color="gray.500">
+                      Fee: {(Number(transaction.fee) / 1_000_000).toFixed(6)}{" "}
+                      VOI
+                    </Text>
+                    <Text fontSize="sm" color="gray.500">
+                      Round:{" "}
+                      <Button
+                        as="a"
+                        href={`/block/${transaction.confirmedRound}`}
+                        variant="link"
+                        colorScheme="blue"
+                        size="sm"
+                      >
+                        {transaction.confirmedRound.toString()}
+                      </Button>
+                    </Text>
+                    {transaction.group && (
+                      <Text fontSize="sm" color="gray.500">
+                        Group:{" "}
+                        <Button
+                          as="a"
+                          href={`/group/${Buffer.from(
+                            transaction.group
+                          ).toString("base64")}`}
+                          variant="link"
+                          colorScheme="blue"
+                          size="sm"
+                        >
+                          {Buffer.from(transaction.group).toString("base64")}
+                        </Button>
+                      </Text>
+                    )}
+                    <Text fontSize="sm" color="gray.500">
+                      Time:{" "}
+                      {new Date(transaction.roundTime * 1000).toLocaleString()}
+                    </Text>
+                  </Stack>
+                )}
               </Stack>
             </CardBody>
           </Card>
@@ -264,60 +1400,52 @@ const Transaction: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    const fetchTransaction = async () => {
-      try {
-        setLoading(true);
-        const response = await getTransaction(txId || "");
-        setTransaction(response.transaction);
-        setError(null);
-      } catch (err) {
-        setError("Failed to fetch transaction data");
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (txId) {
-      fetchTransaction();
+  const getTransactionBadgeColor = (txType: string) => {
+    switch (txType) {
+      case "pay":
+        return "green";
+      case "appl":
+        return "purple";
+      case "axfer":
+        return "blue";
+      case "stpf":
+        return "orange";
+      default:
+        return "gray";
     }
-  }, [txId]);
+  };
 
-  if (loading)
-    return (
-      <Box pt={8}>
-        <Text>Loading...</Text>
-      </Box>
-    );
-  if (error)
-    return (
-      <Box pt={8}>
-        <Text color="red.500">{error}</Text>
-      </Box>
-    );
-  if (!transaction)
-    return (
-      <Box pt={8}>
-        <Text>Transaction not found</Text>
-      </Box>
-    );
+  const getTransactionType = (txType: string) => {
+    switch (txType) {
+      case "pay":
+        return "Payment";
+      case "appl":
+        return "Application";
+      case "axfer":
+        return "Asset Transfer";
+      case "stpf":
+        return "State Proof";
+      default:
+        return txType.toUpperCase();
+    }
+  };
 
   return (
-    <Stack spacing={6} pt={8}>
-      <Flex justify="space-between" align="center">
-        <Heading size="lg">Transaction Details</Heading>
-        <Button
-          onClick={() => setShowRawData(!showRawData)}
-          variant="ghost"
-          rightIcon={showRawData ? <ChevronUpIcon /> : <ChevronDownIcon />}
-          size="sm"
-        >
-          {showRawData ? "Hide" : "View"} Raw Data
-        </Button>
-      </Flex>
-
-      {showRawData && (
+    <Stack spacing={compact ? 2 : 6} pt={compact ? 0 : 8}>
+      {!compact && (
+        <Flex justify="space-between" align="center">
+          <Heading size="lg">Transaction Details</Heading>
+          <Button
+            onClick={() => setShowRawData(!showRawData)}
+            variant="ghost"
+            rightIcon={showRawData ? <ChevronUpIcon /> : <ChevronDownIcon />}
+            size="sm"
+          >
+            {showRawData ? "Hide" : "View"} Raw Data
+          </Button>
+        </Flex>
+      )}
+      {showRawData && transaction && (
         <Card>
           <CardBody>
             <Box
@@ -329,33 +1457,38 @@ const Transaction: React.FC = () => {
               p={4}
             >
               <Code display="block" whiteSpace="pre" fontSize="sm">
-                {JSON.stringify(transaction, null, 2)}
+                {JSON.stringify(
+                  transaction,
+                  (_, value) =>
+                    typeof value === "bigint" ? value.toString() : value,
+                  2
+                )}
               </Code>
             </Box>
           </CardBody>
         </Card>
       )}
-
       {renderTransactionDetails()}
-
-      <Box pt={4} textAlign="center">
-        <Text color="gray.500" fontSize="sm" mb={2}>
-          Found a new transaction type? Submit it for rewards!
-        </Text>
-        <Button
-          as="a"
-          href="https://docs.google.com/forms/d/e/1FAIpQLSdBliiztOgCibPldYoWPDZmmyiPKcvjY9VoFsxY0pxWuW8njg/viewform"
-          target="_blank"
-          rel="noopener noreferrer"
-          colorScheme="blue"
-          size="sm"
-          rightIcon={<ExternalLinkIcon />}
-        >
-          Submit Transaction Type
-        </Button>
-      </Box>
+      {!compact && (
+        <Box pt={4} textAlign="center">
+          <Text color="gray.500" fontSize="sm" mb={2}>
+            Found a new transaction type? Submit it for rewards!
+          </Text>
+          <Button
+            as="a"
+            href="https://docs.google.com/forms/d/e/1FAIpQLSdBliiztOgCibPldYoWPDZmmyiPKcvjY9VoFsxY0pxWuW8njg/viewform"
+            target="_blank"
+            rel="noopener noreferrer"
+            colorScheme="blue"
+            size="sm"
+            rightIcon={<ExternalLinkIcon />}
+          >
+            Submit Transaction Type
+          </Button>
+        </Box>
+      )}
     </Stack>
   );
 };
 
-export default Transaction;
+export default TransactionContainer;
