@@ -57,8 +57,6 @@ const TransactionContainer: React.FC = () => {
   const { txId } = useParams<{ txId: string }>();
   const [transaction, setTransaction] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // // // fetch
   useEffect(() => {
     const fetchTransaction = async () => {
       const response = await getTransaction(txId || "");
@@ -71,12 +69,6 @@ const TransactionContainer: React.FC = () => {
     return (
       <Box pt={8}>
         <Text>Loading...</Text>
-      </Box>
-    );
-  if (error)
-    return (
-      <Box pt={8}>
-        <Text color="red.500">{error}</Text>
       </Box>
     );
   if (!transaction)
@@ -92,9 +84,6 @@ export const Transaction: React.FC<{
   transaction: any;
   compact?: boolean;
 }> = ({ transaction, compact = false }) => {
-  //const { txId } = useParams<{ txId: string }>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showRawData, setShowRawData] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
@@ -394,7 +383,7 @@ export const Transaction: React.FC<{
     );
   };
 
-  const renderWVOIWithdrawCompact = (tx: any) => {};
+  // const renderWVOIWithdrawCompact = (tx: any) => {};
 
   const renderWVOIWithdraw = (tx: any) => {
     const who = tx.sender;
@@ -697,7 +686,7 @@ export const Transaction: React.FC<{
     );
   };
 
-  const renderNopCompact = (tx: any) => {
+  const renderNopCompact = () => {
     return (
       <Stack spacing={2}>
         <Flex justify="space-between" align="center">
@@ -814,7 +803,7 @@ export const Transaction: React.FC<{
         case ARC4_SELECTOR_WVOI_DEPOSIT:
           return renderWVOIDepositCompact(tx);
         case ARC4_SELECTOR_NOP:
-          return renderNopCompact(tx);
+          return renderNopCompact();
         default:
           return (
             <Stack spacing={2}>
