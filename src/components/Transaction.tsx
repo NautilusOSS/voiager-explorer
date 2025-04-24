@@ -14,6 +14,7 @@ import {
   Code,
   useColorModeValue,
   SimpleGrid,
+  Image,
 } from "@chakra-ui/react";
 import {
   ChevronDownIcon,
@@ -31,11 +32,49 @@ interface ParsedNote {
   raw?: string;
 }
 
-const AddressDisplay: React.FC<{ address: string }> = ({ address }) => {
+interface SwapEventData {
+  who: string;
+  swapIn: {
+    a: string;
+    b: string;
+  };
+  swapOut: {
+    a: string;
+    b: string;
+  };
+  poolBalances: {
+    a: string;
+    b: string;
+  };
+}
+
+interface PoolData {
+  poolBalA: string;
+  poolBalB: string;
+  symbolA: string;
+  symbolB: string;
+  tokADecimals: number;
+  tokBDecimals: number;
+  tvl: number;
+  tvlA: string;
+  tvlB: string;
+  volA: string;
+  volB: string;
+  apr: string;
+  tokAId: number;
+  tokBId: number;
+}
+
+const AddressDisplay: React.FC<{ address: string; sliceLength?: number }> = ({
+  address,
+  sliceLength = 5,
+}) => {
   const handleCopy = () => {
     navigator.clipboard.writeText(address);
   };
-  const shortAddress = `${address.slice(0, 10)}...${address.slice(-10)}`;
+  const shortAddress = `${address.slice(0, sliceLength)}...${address.slice(
+    -sliceLength
+  )}`;
   return (
     <Flex align="center" gap={1}>
       <Button
@@ -46,6 +85,27 @@ const AddressDisplay: React.FC<{ address: string }> = ({ address }) => {
       >
         {shortAddress}
       </Button>
+      <Button size="xs" variant="ghost" onClick={handleCopy}>
+        <CopyIcon />
+      </Button>
+    </Flex>
+  );
+};
+
+const TxIdDisplay: React.FC<{ txId: string; sliceLength?: number }> = ({
+  txId,
+  sliceLength = 5,
+}) => {
+  const handleCopy = () => {
+    navigator.clipboard.writeText(txId);
+  };
+  return (
+    <Flex align="center" gap={1}>
+      <Link to={`/transaction/${txId}`}>
+        <Text fontFamily="mono" fontSize="sm" color="gray.500">
+          {txId.slice(0, sliceLength)}...{txId.slice(-sliceLength)}
+        </Text>
+      </Link>
       <Button size="xs" variant="ghost" onClick={handleCopy}>
         <CopyIcon />
       </Button>
@@ -78,7 +138,12 @@ const TransactionContainer: React.FC = () => {
       </Box>
     );
 
-  return <Transaction transaction={transaction} />;
+  return (
+    <>
+      <Transaction compact transaction={transaction} />
+      <Transaction transaction={transaction} />
+    </>
+  );
 };
 export const Transaction: React.FC<{
   transaction: any;
@@ -208,9 +273,7 @@ export const Transaction: React.FC<{
                 <Badge colorScheme="green" mb={2}>
                   Payment
                 </Badge>
-                <Text fontFamily="mono" fontSize="sm" color="gray.500">
-                  {tx.id}
-                </Text>
+                <TxIdDisplay txId={tx.id} />
               </Box>
               <Text fontWeight="bold">
                 {(Number(tx.paymentTransaction.amount) / 1_000_000).toFixed(6)}{" "}
@@ -276,6 +339,7 @@ export const Transaction: React.FC<{
                     Time: {new Date(tx.roundTime * 1000).toLocaleString()}
                   </Text>
                 </Stack>
+                {renderExplorerLinks(tx.id)}
               </>
             )}
           </Stack>
@@ -290,6 +354,8 @@ export const Transaction: React.FC<{
   const ARC4_SELECTOR_WVOI_DEPOSIT = "AiMmfA==";
   const ARC4_SELECTOR_WVOI_WITHDRAW = "aM+Yzg==";
   const ARC4_SELECTOR_NOP = "WHWfog==";
+  const ARC4_SELECTOR_HUMBLE_SWAP_BUY = "JrGGIQ==";
+  const ARC4_SELECTOR_HUMBLE_SWAP_SELL = "nLvtuw==";
   const renderNop = (tx: any) => {
     return (
       <Card>
@@ -789,7 +855,323 @@ export const Transaction: React.FC<{
     );
   };
 
+  const EVENT_SELECTOR_HUMBLE_SWAP = "H268Tw=="; // SwapEvent(address,(uint256,uint256),(uint256,uint256),(uint256,uint256))
+
+  const getAssetIconUrl = (assetId?: number | string) => {
+    if (!assetId) {
+      return "https://asset-verification.nautilus.sh/icons/0.png";
+    } else if (assetId === "390001") {
+      return "https://asset-verification.nautilus.sh/icons/0.png";
+    }
+    return `https://asset-verification.nautilus.sh/icons/${assetId}.png`;
+  };
+
+  const TokenIcon: React.FC<{
+    assetId?: number | string;
+    symbol?: string;
+  }> = ({ assetId, symbol }) => (
+    <Image
+      borderRadius="full"
+      src={getAssetIconUrl(assetId)}
+      alt={`${symbol} icon`}
+      width="20px"
+      height="20px"
+      mr={1}
+      fallbackSrc={`https://asset-verification.nautilus.sh/icons/0.png`}
+      onError={() => {
+        console.warn(`Failed to load icon for asset ${assetId}`);
+      }}
+    />
+  );
+
+  const renderHumbleSwapCompact = (tx: any) => {
+    const [poolData, setPoolData] = useState<PoolData | null>(null);
+    useEffect(() => {
+      const fetchPoolData = async () => {
+        try {
+          const response = await fetch(
+            `https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/pools?contractId=${tx.applicationTransaction.applicationId}`
+          );
+          const data = await response.json();
+          if (data.pools && data.pools.length > 0) {
+            setPoolData(data.pools[0]);
+          }
+        } catch (error) {
+          console.error("Error fetching pool data:", error);
+        }
+      };
+      fetchPoolData();
+    }, []);
+
+    const swapType = Buffer.from(
+      tx.applicationTransaction.applicationArgs[0]
+    ).toString("base64");
+    const isBuy = swapType === ARC4_SELECTOR_HUMBLE_SWAP_BUY;
+    const [, , /*simulateRaw*/ /*amountRaw*/ slippageLimitRaw] =
+      tx.applicationTransaction.applicationArgs.slice(1);
+    const slippageLimit = BigInt(
+      "0x" + Buffer.from(slippageLimitRaw).toString("hex")
+    ).toString();
+
+    const swapEvent = tx.logs.find((log: Uint8Array) => {
+      const selector = Buffer.from(log).slice(0, 4).toString("base64");
+      return selector === EVENT_SELECTOR_HUMBLE_SWAP;
+    });
+    const swapData = parseSwapEvent(swapEvent);
+
+    // Format amounts with symbols
+    const formatAmount = (amount: string, decimals: number = 6) => {
+      return Number(amount) / Math.pow(10, decimals);
+    };
+
+    const swapInAmount = formatAmount(
+      isBuy ? swapData?.swapIn?.b : swapData?.swapIn?.a,
+      isBuy ? poolData?.tokBDecimals : poolData?.tokADecimals
+    );
+    const swapOutAmount = formatAmount(
+      isBuy ? swapData?.swapOut?.a : swapData?.swapOut?.b,
+      isBuy ? poolData?.tokADecimals : poolData?.tokBDecimals
+    );
+
+    const swapInSymbol = isBuy ? poolData?.symbolB : poolData?.symbolA;
+    const swapOutSymbol = isBuy ? poolData?.symbolA : poolData?.symbolB;
+
+    const rate =
+      swapData && (Number(swapOutAmount) / Number(swapInAmount)).toFixed(8);
+    const slippageLimitAmount = formatAmount(
+      slippageLimit,
+      isBuy ? poolData?.tokADecimals : poolData?.tokBDecimals
+    );
+    const slippage =
+      swapData &&
+      (
+        (Number(swapOutAmount) - Number(slippageLimitAmount)) /
+        Number(slippageLimitAmount)
+      ).toFixed(2);
+
+    return (
+      <Link to={`/transaction/${tx.id}`}>
+        <Card>
+          <CardBody>
+            <Stack spacing={2}>
+              <Flex justify="space-between" align="center">
+                <Box>
+                  <Badge colorScheme="green" mr="-3px" borderRightRadius="0">
+                    Humble
+                  </Badge>
+                  <Badge colorScheme="purple" borderLeftRadius="0">
+                    Swap
+                  </Badge>
+                </Box>
+              </Flex>
+              {swapData && (
+                <>
+                  <Text fontSize="sm" alignItems="center">
+                    <Flex align="center">
+                      <Flex align="center" display="inline-flex">
+                        <TokenIcon
+                          assetId={isBuy ? poolData?.tokBId : poolData?.tokAId}
+                          symbol={swapInSymbol}
+                        />
+                        {swapInAmount} {swapInSymbol}
+                      </Flex>
+                      {" → "}
+                      <Flex align="center" display="inline-flex">
+                        <TokenIcon
+                          assetId={isBuy ? poolData?.tokAId : poolData?.tokBId}
+                          symbol={swapOutSymbol}
+                        />
+                        {swapOutAmount} {swapOutSymbol}
+                      </Flex>
+                    </Flex>
+                  </Text>
+                  {rate && (
+                    <Text fontSize="xs" color="gray.500">
+                      Rate: {rate} {swapOutSymbol}/{swapInSymbol}
+                    </Text>
+                  )}
+                  <Flex justify="space-between" align="center">
+                    {slippage && (
+                      <Text fontSize="xs" color="gray.500">
+                        Slippage: {slippage}%
+                      </Text>
+                    )}
+                    <Text fontSize="xs" color="gray.500">
+                      {getRelativeTime(tx.roundTime)}
+                    </Text>
+                  </Flex>
+                </>
+              )}
+            </Stack>
+          </CardBody>
+        </Card>
+      </Link>
+    );
+  };
+
+  const renderHumbleSwap = (tx: any) => {
+    const [poolData, setPoolData] = useState<PoolData | null>(null);
+    useEffect(() => {
+      const fetchPoolData = async () => {
+        try {
+          const response = await fetch(
+            `https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/pools?contractId=${tx.applicationTransaction.applicationId}`
+          );
+          const data = await response.json();
+          if (data.pools && data.pools.length > 0) {
+            setPoolData(data.pools[0]);
+          }
+        } catch (error) {
+          console.error("Error fetching pool data:", error);
+        }
+      };
+      fetchPoolData();
+    }, []);
+    const swapType = Buffer.from(
+      tx.applicationTransaction.applicationArgs[0]
+    ).toString("base64");
+    const isBuy = swapType === ARC4_SELECTOR_HUMBLE_SWAP_BUY;
+    const [, , /*simulateRaw*/ /*amountRaw*/ slippageLimitRaw] =
+      tx.applicationTransaction.applicationArgs.slice(1);
+    // const amount = BigInt(
+    //   "0x" + Buffer.from(amountRaw).toString("hex")
+    // ).toString();
+    const slippageLimit = BigInt(
+      "0x" + Buffer.from(slippageLimitRaw).toString("hex")
+    ).toString();
+    const swapEvent = tx.logs.find((log: Uint8Array) => {
+      const selector = Buffer.from(log).slice(0, 4).toString("base64");
+      return selector === EVENT_SELECTOR_HUMBLE_SWAP;
+    });
+    const swapData = parseSwapEvent(swapEvent);
+
+    // Format amounts with symbols
+    const formatAmount = (amount: string, decimals: number = 6) => {
+      return Number(amount) / Math.pow(10, decimals);
+    };
+    // const swapAmount = formatAmount(
+    //   amount,
+    //   isBuy ? poolData?.tokBDecimals : poolData?.tokADecimals
+    // );
+    // swap amount equal swap in amount
+    const swapInAmount = formatAmount(
+      isBuy ? swapData?.swapIn?.b : swapData?.swapIn?.a,
+      isBuy ? poolData?.tokBDecimals : poolData?.tokADecimals
+    );
+
+    const swapInSymbol = isBuy ? poolData?.symbolB : poolData?.symbolA;
+
+    const swapOutAmount = formatAmount(
+      isBuy ? swapData?.swapOut?.a : swapData?.swapOut?.b,
+      isBuy ? poolData?.tokADecimals : poolData?.tokBDecimals
+    );
+
+    const swapOutSymbol = isBuy ? poolData?.symbolA : poolData?.symbolB;
+
+    const rate =
+      swapData && (Number(swapOutAmount) / Number(swapInAmount)).toFixed(8);
+
+    const slippageLimitAmount = formatAmount(
+      slippageLimit,
+      isBuy ? poolData?.tokADecimals : poolData?.tokBDecimals
+    );
+
+    // slippage tolerance is less than or equal to the swap out amount
+    const slippage =
+      swapData &&
+      (
+        (Number(swapOutAmount) - Number(slippageLimitAmount)) /
+        Number(slippageLimitAmount)
+      ).toFixed(2);
+
+    return (
+      <Card>
+        <CardBody>
+          <Stack spacing={4}>
+            <Stack spacing={3}>
+              <Flex justify="space-between" align="center">
+                <Box>
+                  <Badge
+                    colorScheme="green"
+                    mb={2}
+                    mr="-3px"
+                    borderRightRadius="0"
+                  >
+                    Humble
+                  </Badge>
+                  <Badge colorScheme="purple" mb={2}>
+                    Swap
+                  </Badge>
+                </Box>
+                <Box>
+                  {/* replace with view pool button */}
+                  <Button
+                    as="a"
+                    href={`/token/${tx.applicationTransaction.applicationId}`}
+                    variant="link"
+                    colorScheme="blue"
+                  >
+                    View Token
+                  </Button>
+                </Box>
+              </Flex>
+              <Box>
+                <Text fontSize="sm" color="gray.500" mb={1}>
+                  Swap
+                </Text>
+                <Text fontSize="sm">
+                  <Flex align="center">
+                    <Flex align="center" display="inline-flex">
+                      <TokenIcon
+                        assetId={isBuy ? poolData?.tokBId : poolData?.tokAId}
+                        symbol={swapInSymbol}
+                      />
+                      {swapInAmount} {swapInSymbol}
+                    </Flex>
+                    {" → "}
+                    <Flex align="center" display="inline-flex">
+                      <TokenIcon
+                        assetId={isBuy ? poolData?.tokAId : poolData?.tokBId}
+                        symbol={swapOutSymbol}
+                      />
+                      {swapOutAmount} {swapOutSymbol}
+                    </Flex>
+                  </Flex>
+                </Text>
+              </Box>
+              <Box>
+                <Text fontSize="sm" color="gray.500" mb={1}>
+                  Rate
+                </Text>
+                <Text fontSize="sm">{rate}</Text>
+              </Box>
+              <Box>
+                <Text fontSize="sm" color="gray.500" mb={1}>
+                  Sender
+                </Text>
+                <AddressDisplay address={tx.sender} />
+              </Box>
+            </Stack>
+            <Flex mt={4} justify="space-between" align="center">
+              <Text fontSize="sm" color="gray.500">
+                Slippage: {slippage}%
+              </Text>
+              <Box>
+                <Text fontSize="sm" color="gray.500">
+                  {getRelativeTime(tx.roundTime)}
+                </Text>
+              </Box>
+            </Flex>
+          </Stack>
+        </CardBody>
+      </Card>
+    );
+  };
+
   const renderApplicationArgs = (tx: any) => {
+    if (tx.applicationTransaction.applicationArgs.length === 0) {
+      return null;
+    }
     const mSelector = Buffer.from(
       tx.applicationTransaction.applicationArgs[0]
     ).toString("base64");
@@ -804,13 +1186,15 @@ export const Transaction: React.FC<{
           return renderWVOIDepositCompact(tx);
         case ARC4_SELECTOR_NOP:
           return renderNopCompact();
+        case ARC4_SELECTOR_HUMBLE_SWAP_BUY:
+          return renderHumbleSwapCompact(tx);
+        case ARC4_SELECTOR_HUMBLE_SWAP_SELL:
+          return renderHumbleSwapCompact(tx);
         default:
           return (
             <Stack spacing={2}>
               <Badge colorScheme="purple">Application Call</Badge>
-              <Text fontSize="sm">
-                App ID: {tx.applicationTransaction.applicationId}
-              </Text>
+              <TxIdDisplay txId={tx.id} />
             </Stack>
           );
       }
@@ -828,6 +1212,10 @@ export const Transaction: React.FC<{
         return renderWVOIWithdraw(tx);
       case ARC4_SELECTOR_NOP:
         return renderNop(tx);
+      case ARC4_SELECTOR_HUMBLE_SWAP_BUY:
+        return renderHumbleSwap(tx);
+      case ARC4_SELECTOR_HUMBLE_SWAP_SELL:
+        return renderHumbleSwap(tx);
       default:
         return renderApplicationArgsFallback(tx);
     }
@@ -845,6 +1233,8 @@ export const Transaction: React.FC<{
       ARC4_SELECTOR_ARC200_APPROVE,
       ARC4_SELECTOR_WVOI_DEPOSIT,
       ARC4_SELECTOR_NOP,
+      ARC4_SELECTOR_HUMBLE_SWAP_BUY,
+      ARC4_SELECTOR_HUMBLE_SWAP_SELL,
     ].includes(mSelector || "");
 
     return (
@@ -887,9 +1277,6 @@ export const Transaction: React.FC<{
                 </SimpleGrid>
               )}
               {renderApplicationArgs(tx)}
-              <Text fontSize="xs" color="gray.500" alignSelf="flex-end">
-                {getRelativeTime(tx.roundTime)}
-              </Text>
             </Stack>
           </CardBody>
         </Card>
@@ -907,9 +1294,7 @@ export const Transaction: React.FC<{
                 <Badge colorScheme="purple" mb={2}>
                   Application Call
                 </Badge>
-                <Text fontFamily="mono" fontSize="sm" color="gray.500">
-                  {tx.id}
-                </Text>
+                <TxIdDisplay txId={tx.id} />
               </Box>
               <Text>
                 App ID:{" "}
@@ -973,6 +1358,7 @@ export const Transaction: React.FC<{
                     Time: {new Date(tx.roundTime * 1000).toLocaleString()}
                   </Text>
                 </Stack>
+                {renderExplorerLinks(tx.id)}
               </Stack>
             )}
           </Stack>
@@ -1041,9 +1427,7 @@ export const Transaction: React.FC<{
                 <Badge colorScheme="blue" mb={2}>
                   Asset Transfer
                 </Badge>
-                <Text fontFamily="mono" fontSize="sm" color="gray.500">
-                  {tx.id}
-                </Text>
+                <TxIdDisplay txId={tx.id} />
               </Box>
               <Text fontWeight="bold">
                 Asset ID: {tx.assetTransferTransaction.assetId}
@@ -1165,9 +1549,7 @@ export const Transaction: React.FC<{
                 <Badge colorScheme="orange" mb={2}>
                   State Proof
                 </Badge>
-                <Text fontFamily="mono" fontSize="sm" color="gray.500">
-                  {tx.id}
-                </Text>
+                <TxIdDisplay txId={tx.id} />
               </Box>
             </Flex>
             <Divider />
@@ -1231,6 +1613,7 @@ export const Transaction: React.FC<{
                     Time: {new Date(tx.roundTime * 1000).toLocaleString()}
                   </Text>
                 </Stack>
+                {renderExplorerLinks(tx.id)}
               </Stack>
             )}
           </Stack>
@@ -1321,9 +1704,7 @@ export const Transaction: React.FC<{
               <Stack spacing={4}>
                 <Box>
                   <Badge>{transaction["tx-type"]}</Badge>
-                  <Text fontFamily="mono" fontSize="sm" color="gray.500" mt={2}>
-                    {transaction.id}
-                  </Text>
+                  <TxIdDisplay txId={transaction.id} />
                 </Box>
                 <Divider />
                 <Box>
@@ -1382,6 +1763,7 @@ export const Transaction: React.FC<{
                     </Text>
                   </Stack>
                 )}
+                {renderExplorerLinks(transaction.id)}
               </Stack>
             </CardBody>
           </Card>
@@ -1417,6 +1799,91 @@ export const Transaction: React.FC<{
       default:
         return txType.toUpperCase();
     }
+  };
+
+  const parseUint64FromHex = (buffer: Buffer, offset: number = 0): string => {
+    return BigInt(
+      "0x" + buffer.slice(offset, offset + 32).toString("hex")
+    ).toString();
+  };
+
+  const parseSwapEvent = (log: Uint8Array): SwapEventData => {
+    const eventBuffer = Buffer.from(log);
+
+    // Skip first 4 bytes (selector)
+    const who = algosdk.encodeAddress(
+      Uint8Array.from(eventBuffer.slice(4, 36))
+    );
+
+    // Parse swap amounts (36-164)
+    const swapIn = {
+      a: parseUint64FromHex(eventBuffer, 36),
+      b: parseUint64FromHex(eventBuffer, 68),
+    };
+
+    const swapOut = {
+      a: parseUint64FromHex(eventBuffer, 100),
+      b: parseUint64FromHex(eventBuffer, 132),
+    };
+
+    // Parse pool balances (164-228)
+    const poolBalances = {
+      a: parseUint64FromHex(eventBuffer, 164),
+      b: parseUint64FromHex(eventBuffer, 196),
+    };
+
+    return {
+      who,
+      swapIn,
+      swapOut,
+      poolBalances,
+    };
+  };
+
+  const renderExplorerLinks = (txId: string) => {
+    return (
+      <Stack direction="row" spacing={4} align="center">
+        <Text fontSize="sm" color="gray.500">
+          View on:
+        </Text>
+        <Button
+          as="a"
+          href={`https://block.voi.network/explorer/transaction/${txId}`}
+          variant="link"
+          colorScheme="blue"
+          size="sm"
+          rightIcon={<ExternalLinkIcon />}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          VoiBlockExplorer
+        </Button>
+        <Button
+          as="a"
+          href={`https://explorer.voi.network/explorer/transaction/${txId}`}
+          variant="link"
+          colorScheme="blue"
+          size="sm"
+          rightIcon={<ExternalLinkIcon />}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          VoiExplorer
+        </Button>
+        <Button
+          as="a"
+          href={`https://voi.observer/explorer/transaction/${txId}`}
+          variant="link"
+          colorScheme="blue"
+          size="sm"
+          rightIcon={<ExternalLinkIcon />}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          VoiObserver
+        </Button>
+      </Stack>
+    );
   };
 
   return (
