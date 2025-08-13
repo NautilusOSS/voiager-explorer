@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link as RouterLink } from "react-router-dom";
+import { useParams, Link as RouterLink, useLocation } from "react-router-dom";
 import {
   Box,
   Container,
@@ -162,6 +162,9 @@ interface AdvertisementConfig {
 
 const Token: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const tab = searchParams.get("tab");
   const [token, setToken] = useState<Token | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1705,6 +1708,17 @@ const Token: React.FC = () => {
     }
   }, [pools, selectedPool]);
 
+  // Handle query parameter navigation to specific tabs
+  useEffect(() => {
+    if (tab === "holders") {
+      setActiveTab(0);
+    } else if (tab === "transfers") {
+      setActiveTab(1);
+    } else if (tab === "charts") {
+      setActiveTab(2);
+    }
+  }, [tab]);
+
   // Update the tab change handler
   const handleTabChange = (index: number) => {
     setActiveTab(index);
@@ -1921,7 +1935,7 @@ const Token: React.FC = () => {
               onChange={handleTabChange}
               isFitted
               variant="enclosed"
-              defaultIndex={2}
+              defaultIndex={tab === "holders" ? 0 : tab === "transfers" ? 1 : 2}
             >
               <TabList mb={4} pb={4}>
                 <Tab>Top Holders</Tab>
