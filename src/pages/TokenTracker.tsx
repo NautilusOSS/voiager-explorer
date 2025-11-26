@@ -99,24 +99,58 @@ const TokenTracker: React.FC = () => {
       try {
         setLoading(true);
         const response = await fetch(
-          "https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/tokens?includes=all"
+          "https://humble-api.voi.nautilus.sh/tokens"
         );
         const data = await response.json();
 
-        // Filter out test tokens and sort by price
-        const filteredTokens = data.tokens
-          .filter(
-            (token: Token) =>
-              !token.name.toLowerCase().includes("test") &&
-              token.verified !== -1 // Exclude unverified tokens
-          )
+        // Map Humble API response to Token interface
+        const mappedTokens: Token[] = data.tokens
+          .filter((token: any) => {
+            // Filter out tokens with empty names or test tokens
+            return (
+              token.name &&
+              token.name.trim() !== "" &&
+              !token.name.toLowerCase().includes("test")
+            );
+          })
+          .map((token: any) => {
+            // Override Wrapped Voi (assetId 390001) to display as Voi
+            const isWrappedVoi = token.assetId === "390001";
+            return {
+              contractId: parseInt(token.assetId),
+              name: isWrappedVoi ? "Voi" : (token.name || ""),
+              symbol: isWrappedVoi ? "VOI" : (token.unitName || ""),
+              decimals: parseInt(token.decimals) || 0,
+              totalSupply: token.totalSupply || "0",
+              creator: "", // Not available from Humble API
+              deleted: 0, // Default value
+              price: "0", // Default value, price not available from Humble API
+              tokenId: token.assetId,
+              verified: null, // Not available from Humble API
+              mintRound: token.lastUpdated || 0,
+              change_1h: {
+                latest_price: null,
+                earliest_price: null,
+                percent_change: null,
+              },
+              change_24h: {
+                latest_price: null,
+                earliest_price: null,
+                percent_change: null,
+              },
+              change_7d: {
+                latest_price: null,
+                earliest_price: null,
+                percent_change: null,
+              },
+            };
+          })
           .sort((a: Token, b: Token) => {
-            const aPrice = a.price ? Number(a.price) : 0;
-            const bPrice = b.price ? Number(b.price) : 0;
-            return bPrice - aPrice;
+            // Sort by name alphabetically since price is not available
+            return a.name.localeCompare(b.name);
           });
 
-        setTokens(filteredTokens);
+        setTokens(mappedTokens);
         setError(null);
       } catch (err) {
         console.error("Error fetching tokens:", err);
@@ -169,46 +203,45 @@ const TokenTracker: React.FC = () => {
           cursor="pointer"
           _hover={{ transform: "translateY(-2px)", boxShadow: "lg" }}
           transition="all 0.2s"
-          align="center"
-          p={4}
+          h="100%"
+          display="flex"
+          flexDirection="column"
+          minH="180px"
         >
-          <Box mb={3}>
-            <Image
-              src={`https://asset-verification.nautilus.sh/icons/${token.contractId}.png`}
-              alt={token.name}
-              boxSize="60px"
-              borderRadius="full"
-              fallback={
-                <Center boxSize="60px" bg="gray.100" borderRadius="full">
-                  <Text fontSize="2xl">{token.symbol[0]}</Text>
-                </Center>
-              }
-            />
-          </Box>
-          <Text fontWeight="bold" fontSize="sm" noOfLines={1}>
-            {token.name}
-          </Text>
-          <Text fontSize="xs" color="gray.500">
-            {token.symbol}
-          </Text>
-          {renderPrice(token.price)}
-          <Text
-            fontSize="xs"
-            color={
-              token.change_7d?.percent_change || 0 >= 0
-                ? "green.500"
-                : "red.500"
-            }
+          <CardBody
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            textAlign="center"
+            p={4}
+            flex="1"
+            gap={2}
           >
-            {token.change_7d?.percent_change ? (
-              <>
-                {token.change_7d.percent_change >= 0 ? "+" : ""}
-                {token.change_7d.percent_change.toFixed(2)}%
-              </>
-            ) : (
-              "\u00A0"
-            )}
-          </Text>
+            <Box>
+              <Image
+                src={
+                  token.contractId === 390001
+                    ? `https://asset-verification.nautilus.sh/icons/0.png`
+                    : `https://asset-verification.nautilus.sh/icons/${token.contractId}.png`
+                }
+                alt={token.name}
+                boxSize="60px"
+                borderRadius="full"
+                fallback={
+                  <Center boxSize="60px" bg="gray.100" borderRadius="full">
+                    <Text fontSize="2xl">{token.symbol[0]}</Text>
+                  </Center>
+                }
+              />
+            </Box>
+            <Text fontWeight="bold" fontSize="sm" noOfLines={1} textAlign="center">
+              {token.name}
+            </Text>
+            <Text fontSize="xs" color="gray.500" textAlign="center">
+              {token.symbol}
+            </Text>
+          </CardBody>
         </Card>
       ))}
     </SimpleGrid>
@@ -372,9 +405,8 @@ const TokenTracker: React.FC = () => {
   );
 
   // Filter tokens based on verification status
-  const filteredTokens = tokens.filter((token) =>
-    showVerifiedOnly ? token.verified === 1 : token.verified !== -1
-  );
+  // Note: Humble API doesn't provide verification status, so all tokens are shown
+  const filteredTokens = tokens;
 
   return (
     <Container maxW="8xl" py={8}>

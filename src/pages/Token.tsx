@@ -241,6 +241,7 @@ const Token: React.FC = () => {
   const [usdcPool, setUsdcPool] = useState<any | null>(null);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [currentUsdPrice, setCurrentUsdPrice] = useState<number | null>(null);
+  const [totalLiquidityUSD, setTotalLiquidityUSD] = useState<string | null>(null);
   const [showDataTable, setShowDataTable] = useState(false);
   const [showHoldersTable, setShowHoldersTable] = useState(false);
   const [, setSwapData] = useState<any[]>([]);
@@ -349,19 +350,82 @@ const Token: React.FC = () => {
     const fetchToken = async () => {
       try {
         setLoading(true);
+        // Fetch token stats from Humble API
         const response = await fetch(
-          `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/tokens?contractId=${id}&includes=all`
+          `https://humble-api.voi.nautilus.sh/tokens/${id}/stats`
         );
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
-        const tokenData = data.tokens[0];
-        setToken(tokenData);
+        
+        if (!data.token) {
+          setError("Token not found");
+          setToken(null);
+          return;
+        }
 
-        // Fetch block info for creation time
-        if (tokenData.mintRound) {
-          const blockInfo = await indexerClient
-            .lookupBlock(tokenData.mintRound)
-            .do();
-          setCreationTime(blockInfo.timestamp);
+        const tokenData = data.token;
+        const priceData = data.price || {};
+        const priceChangeData = data.priceChange || {};
+        const change24h = priceChangeData["24h"] || {};
+        const liquidityData = data.liquidity || {};
+
+        // Store total liquidity USD from stats
+        if (liquidityData.totalUSD) {
+          setTotalLiquidityUSD(liquidityData.totalUSD);
+        }
+
+        // Override Wrapped Voi (assetId 390001) to display as Voi
+        const isWrappedVoi = tokenData.assetId === "390001";
+        
+        // Map Humble API stats response to Token interface
+        const mappedToken: Token = {
+          contractId: parseInt(tokenData.assetId),
+          name: isWrappedVoi ? "Voi" : (tokenData.name || ""),
+          symbol: isWrappedVoi ? "VOI" : (tokenData.unitName || ""),
+          decimals: parseInt(tokenData.decimals) || 0,
+          totalSupply: tokenData.totalSupply || "0",
+          creator: "", // Not available from Humble API
+          deleted: 0, // Default value
+          price: priceData.voi || "0", // Use price from stats
+          tokenId: tokenData.assetId,
+          verified: null, // Not available from Humble API
+          mintRound: tokenData.lastUpdated || 0,
+          globalState: {}, // Not available from Humble API
+          change_1h: {
+            latest_price: null,
+            earliest_price: null,
+            percent_change: null,
+          },
+          change_24h: {
+            latest_price: priceData.voi || null,
+            earliest_price: null,
+            percent_change: change24h.percent ? parseFloat(change24h.percent) : null,
+          },
+          change_7d: {
+            latest_price: null,
+            earliest_price: null,
+            percent_change: null,
+          },
+          latest_price: priceData.usd ? parseFloat(priceData.usd) : 0,
+        };
+
+        setToken(mappedToken);
+
+        // Fetch block info for creation time if lastUpdated is available
+        if (tokenData.lastUpdated) {
+          try {
+            const blockInfo = await indexerClient
+              .lookupBlock(tokenData.lastUpdated)
+              .do();
+            setCreationTime(blockInfo.timestamp);
+          } catch (blockError) {
+            console.error("Error fetching block info:", blockError);
+            // Continue without creation time
+          }
         }
 
         setError(null);
@@ -1803,7 +1867,11 @@ const Token: React.FC = () => {
               <Flex gap={6} align="flex-start">
                 <Box>
                   <Image
-                    src={`https://asset-verification.nautilus.sh/icons/${token.contractId}.png`}
+                    src={
+                      token.contractId === 390001
+                        ? `https://asset-verification.nautilus.sh/icons/0.png`
+                        : `https://asset-verification.nautilus.sh/icons/${token.contractId}.png`
+                    }
                     alt={token.name}
                     boxSize="100px"
                     borderRadius="xl"
@@ -1829,10 +1897,10 @@ const Token: React.FC = () => {
               </Flex>
 
               <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
-                {currentPrice !== null && (
+                {token.latest_price > 0 && (
                   <Stat>
                     <StatLabel>Current Price</StatLabel>
-                    <StatNumber>{(1 / currentPrice).toFixed(6)} VOI</StatNumber>
+                    <StatNumber>${token.latest_price.toFixed(6)}</StatNumber>
                     {token.change_1h?.percent_change ? (
                       <StatHelpText>
                         <StatArrow
@@ -2367,19 +2435,13 @@ const Token: React.FC = () => {
                                   <StatLabel fontSize="sm">Price</StatLabel>
                                   <Flex align="baseline" gap={2}>
                                     <StatNumber fontSize="lg">
-                                      {currentPrice
-                                        ? (1 / currentPrice).toFixed(6)
-                                        : "-"}{" "}
-                                      VOI
+                                      {token.latest_price > 0
+                                        ? `$${token.latest_price.toFixed(6)}`
+                                        : "-"}
                                     </StatNumber>
-                                    {currentUsdPrice && (
+                                    {token.price && token.price !== "0" && (
                                       <StatHelpText margin={0}>
-                                        ($
-                                        {(
-                                          (1 / currentPrice!) *
-                                          currentUsdPrice
-                                        ).toFixed(4)}
-                                        )
+                                        ({token.price} VOI)
                                       </StatHelpText>
                                     )}
                                   </Flex>
@@ -2394,32 +2456,31 @@ const Token: React.FC = () => {
                                   <StatLabel fontSize="sm">TVL</StatLabel>
                                   <Flex align="baseline" gap={2}>
                                     <StatNumber fontSize="lg">
-                                      {selectedPool &&
-                                      pools.find(
-                                        (p) => p.contractId === selectedPool
-                                      )?.tvlVOI
+                                      {totalLiquidityUSD
+                                        ? `$${formatLargeNumber(parseFloat(totalLiquidityUSD))}`
+                                        : selectedPool &&
+                                          pools.find(
+                                            (p) => p.contractId === selectedPool
+                                          )?.tvlVOI
                                         ? formatLargeNumber(
                                             pools.find(
                                               (p) =>
                                                 p.contractId === selectedPool
                                             )!.tvlVOI
-                                          )
-                                        : "-"}{" "}
-                                      VOI
+                                          ) + " VOI"
+                                        : "-"}
                                     </StatNumber>
-                                    {selectedPool &&
+                                    {totalLiquidityUSD && selectedPool &&
                                       pools.find(
                                         (p) => p.contractId === selectedPool
-                                      )?.tvlUSDC && (
+                                      )?.tvlVOI && (
                                         <StatHelpText margin={0}>
-                                          ($
-                                          {formatLargeNumber(
+                                          ({formatLargeNumber(
                                             pools.find(
                                               (p) =>
                                                 p.contractId === selectedPool
-                                            )!.tvlUSDC
-                                          )}
-                                          )
+                                            )!.tvlVOI
+                                          )} VOI)
                                         </StatHelpText>
                                       )}
                                   </Flex>
