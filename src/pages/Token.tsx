@@ -298,32 +298,71 @@ const Token: React.FC = () => {
 
   const fetchTransfers = async (page: number) => {
     try {
+      // Build base URL with contractId
       const params = new URLSearchParams({
         contractId: id || "",
-        limit: transfersPerPage.toString(),
-        offset: ((page - 1) * transfersPerPage).toString(),
       });
 
-      // Add optional filters
-      if (filters.user) params.append("user", filters.user);
-      if (filters.from) params.append("from", filters.from);
-      if (filters.to) params.append("to", filters.to);
-      if (filters.minRound)
-        params.append("min-round", filters.minRound.toString());
-      if (filters.maxRound)
-        params.append("max-round", filters.maxRound.toString());
-      if (filters.minTimestamp)
-        params.append("min-timestamp", filters.minTimestamp.toString());
-      if (filters.maxTimestamp)
-        params.append("max-timestamp", filters.maxTimestamp.toString());
-
+      // Fetch from new endpoint
       const response = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/transfers?${params.toString()}`
+        `https://voi-mainnet-mimirapi.nftnavigator.xyz/arc200/transfers?${params.toString()}`
       );
       const data = await response.json();
 
-      setTransfers(data.transfers);
-      setHasMoreTransfers(data.transfers.length === transfersPerPage);
+      // Get all transfers and filter client-side
+      let allTransfers = data.transfers || [];
+
+      // Apply filters client-side
+      if (filters.user) {
+        allTransfers = allTransfers.filter(
+          (t: Transfer) =>
+            t.sender.toLowerCase() === filters.user!.toLowerCase() ||
+            t.receiver.toLowerCase() === filters.user!.toLowerCase()
+        );
+      }
+      if (filters.from) {
+        allTransfers = allTransfers.filter(
+          (t: Transfer) =>
+            t.sender.toLowerCase() === filters.from!.toLowerCase()
+        );
+      }
+      if (filters.to) {
+        allTransfers = allTransfers.filter(
+          (t: Transfer) =>
+            t.receiver.toLowerCase() === filters.to!.toLowerCase()
+        );
+      }
+      if (filters.minRound) {
+        allTransfers = allTransfers.filter(
+          (t: Transfer) => t.round >= filters.minRound!
+        );
+      }
+      if (filters.maxRound) {
+        allTransfers = allTransfers.filter(
+          (t: Transfer) => t.round <= filters.maxRound!
+        );
+      }
+      if (filters.minTimestamp) {
+        allTransfers = allTransfers.filter(
+          (t: Transfer) => t.timestamp >= filters.minTimestamp!
+        );
+      }
+      if (filters.maxTimestamp) {
+        allTransfers = allTransfers.filter(
+          (t: Transfer) => t.timestamp <= filters.maxTimestamp!
+        );
+      }
+
+      // Sort by timestamp descending (most recent first)
+      allTransfers.sort((a: Transfer, b: Transfer) => b.timestamp - a.timestamp);
+
+      // Paginate client-side
+      const startIndex = (page - 1) * transfersPerPage;
+      const endIndex = startIndex + transfersPerPage;
+      const paginatedTransfers = allTransfers.slice(startIndex, endIndex);
+
+      setTransfers(paginatedTransfers);
+      setHasMoreTransfers(endIndex < allTransfers.length);
     } catch (err) {
       console.error("Error fetching transfers:", err);
     }
@@ -447,43 +486,77 @@ const Token: React.FC = () => {
     const fetchPools = async () => {
       if (!id) return;
       try {
-        // First fetch the USDC/VOI pool for price reference
-        const usdcPoolResponse = await fetch(
-          "https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/pools?contractId=395553&includes=all"
-        );
-        const usdcPoolData = await usdcPoolResponse.json();
-        const usdcPool = usdcPoolData.pools[0];
-        setUsdcPool(usdcPool);
-
-        // Calculate VOI price
-        const voiPrice = Number(usdcPool.poolBalA) / Number(usdcPool.poolBalB);
-
-        // Now fetch the token's pools
+        // Fetch all pools from Humble API
         const response = await fetch(
-          `https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/pools?tokenId=${id}`
+          `https://humble-api.voi.nautilus.sh/pools/stats?sortBy=tvl`
         );
         const data = await response.json();
-        // Calculate both TVL values for each pool
-        const poolsWithTVL = data.pools.map((pool: any) => {
-          const tvlVOI = Number(pool.tvl);
-          let tvlUSDC = tvlVOI * voiPrice;
 
-          // If this is the USDC/VOI pool, calculate TVL differently
-          if (pool.contractId === 395553) {
-            const usdcBalance = Number(pool.poolBalA);
-            const voiBalance = Number(pool.poolBalB);
-            const poolVoiPrice = usdcBalance / voiBalance;
-            tvlUSDC =
-              Number(pool.tvlA) * poolVoiPrice +
-              Number(pool.tvlB) * poolVoiPrice;
-          }
+        // Find USDC/VOI pool for price reference (pool 395553 is aUSDC/VOI)
+        const usdcVoiPool = data.stats.find((s: any) => 
+          s.pool.poolId === "395553"
+        );
+
+        if (usdcVoiPool) {
+          const usdcPoolInfo = usdcVoiPool.poolInfo;
+          setUsdcPool({
+            poolBalA: usdcPoolInfo.poolBals.A,
+            poolBalB: usdcPoolInfo.poolBals.B,
+          });
+        }
+
+        // Filter pools where the token is either tokA or tokB
+        const tokenPools = data.stats.filter((stat: any) => {
+          const tokA = stat.pool.tokA;
+          const tokB = stat.pool.tokB;
+          return tokA === id || tokB === id;
+        });
+
+        // Map Humble API response to expected format
+        const poolsWithTVL = tokenPools.map((stat: any) => {
+          const pool = stat.pool;
+          const poolInfo = stat.poolInfo;
+          const tokens = stat.tokens;
+          const tvl = stat.tvl;
+          const prices = stat.prices;
+
+          // Determine which token is A and which is B
+          const isTokenA = pool.tokA === id;
+          const tokenA = tokens.tokenA;
+          const tokenB = tokens.tokenB;
+
+          // Get pool balances
+          const poolBalA = poolInfo.poolBals.A;
+          const poolBalB = poolInfo.poolBals.B;
+
+          // Calculate TVL in VOI (using normalized amounts)
+          const tvlVOI = parseFloat(tvl.tokenA.normalized) + parseFloat(tvl.tokenB.normalized);
+          
+          // TVL in USDC (from API)
+          const tvlUSDC = parseFloat(tvl.usd || "0");
 
           return {
-            ...pool,
-            tvlUSDC,
-            tvlVOI,
+            contractId: parseInt(pool.poolId),
+            poolId: pool.poolId,
+            tokAId: pool.tokA,
+            tokBId: pool.tokB,
+            symbolA: tokenA.unitName,
+            symbolB: tokenB.unitName,
+            tokADecimals: parseInt(tokenA.decimals),
+            tokBDecimals: parseInt(tokenB.decimals),
+            poolBalA: poolBalA,
+            poolBalB: poolBalB,
+            tvl: tvlVOI,
+            tvlVOI: tvlVOI,
+            tvlUSDC: tvlUSDC,
+            price: isTokenA ? prices.tokenA.inTokenB : prices.tokenB.inTokenA,
+            volume24h: parseFloat(stat.volume["24h"].usdVolume || "0"),
+            volumeUSD24h: parseFloat(stat.volume["24h"].usdVolume || "0"),
           };
         });
+
+        // Sort by TVL descending
+        poolsWithTVL.sort((a: any, b: any) => b.tvlUSDC - a.tvlUSDC);
 
         setPools(poolsWithTVL);
         // Set first pool as default

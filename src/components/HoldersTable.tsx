@@ -201,11 +201,20 @@ const HoldersTable = ({
   const fetchToken = async () => {
     try {
       const response = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/tokens?contractId=${contractId}`
+        `https://humble-api.voi.nautilus.sh/tokens/${contractId}/stats`
       );
       const data = await response.json();
-      if (data.tokens && data.tokens.length > 0) {
-        setToken(data.tokens[0]);
+      
+      // Map Humble API stats response to Token interface
+      // The stats endpoint returns token data nested under 'token' property
+      if (data.token && data.token.assetId) {
+        setToken({
+          contractId: parseInt(data.token.assetId),
+          name: data.token.name || "",
+          symbol: data.token.unitName || "",
+          decimals: parseInt(data.token.decimals) || 0,
+          totalSupply: data.token.totalSupply || "0",
+        });
       }
     } catch (error) {
       console.error("Error fetching token:", error);
@@ -217,7 +226,7 @@ const HoldersTable = ({
 
     try {
       const response = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${contractId}`
+        `https://voi-mainnet-mimirapi.nftnavigator.xyz/arc200/balances?contractId=${contractId}`
       );
       const data = await response.json();
 
@@ -337,24 +346,35 @@ const HoldersTable = ({
     try {
       await fetchToken();
       const response = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${contractId}&limit=${rowsPerPage}&offset=${
-          (page - 1) * rowsPerPage
-        }`
+        `https://voi-mainnet-mimirapi.nftnavigator.xyz/arc200/balances?contractId=${contractId}`
       );
       const data = await response.json();
 
       // Update holders with new data
       if (token) {
-        const filteredBalances = data.balances.filter(
+        // Get all balances and then paginate client-side
+        const allBalances = data.balances || [];
+        const filteredBalances = allBalances.filter(
           (h: any) => !excludeAddresses.includes(h.accountId)
         );
-        setTotalHolders(data.total);
+        
+        // Sort by balance descending
+        const sortedBalances = filteredBalances.sort(
+          (a: any, b: any) => parseFloat(b.balance) - parseFloat(a.balance)
+        );
+        
+        // Paginate
+        const startIndex = (page - 1) * rowsPerPage;
+        const endIndex = startIndex + rowsPerPage;
+        const paginatedBalances = sortedBalances.slice(startIndex, endIndex);
+        
+        setTotalHolders(data["total-count"] || filteredBalances.length);
 
         const totalSupply = new BigNumber(token.totalSupply).div(
           new BigNumber(10).pow(token.decimals)
         );
 
-        const holders = filteredBalances.map((h: any) => {
+        const holders = paginatedBalances.map((h: any) => {
           const balance = new BigNumber(h.balance).div(
             new BigNumber(10).pow(token.decimals)
           );
@@ -415,16 +435,22 @@ const HoldersTable = ({
   const fetchLiquidityPools = async () => {
     try {
       const response = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/dex/pools?tokenId=${contractId}`
+        `https://humble-api.voi.nautilus.sh/pools`
       );
       const data = await response.json();
+
+      // Filter pools where the token is either tokA or tokB
+      const tokenPools = data.pools.filter((pool: any) => {
+        return pool.tokA === contractId || pool.tokB === contractId;
+      });
 
       // Create a new Map to store addresses and their corresponding appIds
       const poolsMap = new Map<string, number>();
 
-      data.pools.forEach((pool: Pool) => {
-        const address = algosdk.getApplicationAddress(pool.contractId);
-        poolsMap.set(address.toString(), pool.contractId);
+      tokenPools.forEach((pool: any) => {
+        const poolId = parseInt(pool.poolId);
+        const address = algosdk.getApplicationAddress(poolId);
+        poolsMap.set(address.toString(), poolId);
       });
 
       setKnownLiquidityPools(poolsMap);
@@ -457,53 +483,88 @@ const HoldersTable = ({
         throw new Error("Application ID not found for address");
       }
 
-      // Fetch LP token balances
+      // Fetch LP token balances for the pool address
+      // Note: The new endpoint doesn't support accountId, so we'll fetch all balances for the LP token
+      // and get pool info from Humble API instead
       const balancesResponse = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?accountId=${lpAddress}`
+        `https://voi-mainnet-mimirapi.nftnavigator.xyz/arc200/balances?contractId=${appId}`
       );
       const balancesData = await balancesResponse.json();
 
-      // Get pool token balances
-      const tokenBalances = balancesData.balances.reduce(
-        (acc: Record<string, TokenBalance>, bal: any) => {
-          acc[bal.contractId] = {
-            contractId: bal.contractId,
-            balance: bal.balance,
-            symbol: bal.symbol,
-            decimals: bal.decimals,
-          };
-          return acc;
-        },
-        {}
+      // Get pool info from Humble API to get token details and total supply
+      const poolInfoResponse = await fetch(
+        `https://humble-api.voi.nautilus.sh/pools/stats?sortBy=tvl`
+      );
+      const poolInfoData = await poolInfoResponse.json();
+      const poolStat = poolInfoData.stats.find(
+        (stat: any) => stat.pool.poolId === appId.toString()
       );
 
-      const poolTokenBalance = tokenBalances[appId];
-      const totalSupply = MAX_UINT256.minus(
-        new BigNumber(poolTokenBalance.balance)
-      ).toNumber();
-
-      // Fetch LP holders
-      const response = await fetch(
-        `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${appId}&limit=${LP_ROWS_PER_PAGE}&offset=${
-          (page - 1) * LP_ROWS_PER_PAGE
-        }`
+      // Calculate total supply
+      // Try to get from pool's own balance first, then fallback to lpMinted
+      const poolOwnBalance = balancesData.balances.find(
+        (bal: any) => bal.accountId === lpAddress
       );
-      const data = await response.json();
 
-      if (!data.balances) {
-        throw new Error("No balances found");
+      let totalSupply = 0;
+      if (poolOwnBalance) {
+        // Standard ARC200: total supply = MAX_UINT256 - pool's own balance
+        totalSupply = MAX_UINT256.minus(
+          new BigNumber(poolOwnBalance.balance)
+        ).toNumber();
+      } else if (poolStat && poolStat.poolInfo.lptBals.lpMinted) {
+        // Fallback: use lpMinted from pool info
+        totalSupply = parseInt(poolStat.poolInfo.lptBals.lpMinted);
+      } else {
+        // Last resort: sum of all balances (excluding burn address)
+        const allBalances = balancesData.balances || [];
+        const burnAddress = Address.zeroAddress().toString();
+        const nonBurnBalances = allBalances.filter(
+          (bal: any) => bal.accountId !== burnAddress && bal.accountId !== lpAddress
+        );
+        totalSupply = nonBurnBalances.reduce(
+          (sum: number, bal: any) => sum + parseFloat(bal.balance),
+          0
+        );
       }
+
+      // Build token balances map from pool info
+      const tokenBalances: Record<string, TokenBalance> = {};
+      if (poolStat) {
+        const tokens = poolStat.tokens;
+        tokenBalances[poolStat.pool.tokA] = {
+          contractId: parseInt(poolStat.pool.tokA),
+          balance: poolStat.poolInfo.poolBals.A,
+          symbol: tokens.tokenA.unitName,
+          decimals: parseInt(tokens.tokenA.decimals),
+        };
+        tokenBalances[poolStat.pool.tokB] = {
+          contractId: parseInt(poolStat.pool.tokB),
+          balance: poolStat.poolInfo.poolBals.B,
+          symbol: tokens.tokenB.unitName,
+          decimals: parseInt(tokens.tokenB.decimals),
+        };
+      }
+
+      // Get all LP holders and paginate client-side
+      const allBalances = balancesData.balances || [];
 
       // Filter out excluded addresses
       const excludeAddresses = [
-        Address.zeroAddress.toString(),
+        Address.zeroAddress().toString(),
         algosdk.getApplicationAddress(appId).toString(),
+        lpAddress, // Exclude the pool address itself
       ];
-      const filteredBalances = data.balances.filter(
-        (h: any) => !excludeAddresses.includes(h.accountId)
-      );
+      const filteredBalances = allBalances
+        .filter((h: any) => !excludeAddresses.includes(h.accountId))
+        .sort((a: any, b: any) => parseFloat(b.balance) - parseFloat(a.balance));
 
-      const lpHolders = filteredBalances.map((h: any) => {
+      // Paginate client-side
+      const startIndex = (page - 1) * LP_ROWS_PER_PAGE;
+      const endIndex = startIndex + LP_ROWS_PER_PAGE;
+      const paginatedBalances = filteredBalances.slice(startIndex, endIndex);
+
+      const lpHolders = paginatedBalances.map((h: any) => {
         const balance = new BigNumber(h.balance);
         const percentage = balance
           .div(new BigNumber(totalSupply))
@@ -551,7 +612,7 @@ const HoldersTable = ({
         holders: lpHolders,
         loading: false,
         page,
-        totalHolders: data.total,
+        totalHolders: filteredBalances.length,
         poolTokens: tokenBalances,
       });
     } catch (error) {
@@ -813,23 +874,35 @@ const HoldersTable = ({
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
         const response = await fetch(
-          `https://mainnet-idx.nautilus.sh/nft-indexer/v1/arc200/balances?contractId=${contractId}&limit=${rowsPerPage}&offset=${
-            (page - 1) * rowsPerPage
-          }`
+          `https://voi-mainnet-mimirapi.nftnavigator.xyz/arc200/balances?contractId=${contractId}`
         );
         const data = await response.json();
 
+        // Get all balances and then paginate client-side
+        const allBalances = data.balances || [];
+        
         // Filter out excluded addresses before setting total
-        const filteredBalances = data.balances.filter(
+        const filteredBalances = allBalances.filter(
           (h: any) => !excludeAddresses.includes(h.accountId)
         );
-        setTotalHolders(data.total);
+        
+        // Sort by balance descending
+        const sortedBalances = filteredBalances.sort(
+          (a: any, b: any) => parseFloat(b.balance) - parseFloat(a.balance)
+        );
+        
+        // Paginate
+        const startIndex = (page - 1) * rowsPerPage;
+        const endIndex = startIndex + rowsPerPage;
+        const paginatedBalances = sortedBalances.slice(startIndex, endIndex);
+        
+        setTotalHolders(data["total-count"] || filteredBalances.length);
 
         const totalSupply = new BigNumber(token.totalSupply).div(
           new BigNumber(10).pow(token.decimals)
         );
 
-        const holders = filteredBalances.map((h: any) => {
+        const holders = paginatedBalances.map((h: any) => {
           const balance = new BigNumber(h.balance).div(
             new BigNumber(10).pow(token.decimals)
           );
