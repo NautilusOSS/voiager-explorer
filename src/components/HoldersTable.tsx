@@ -60,14 +60,6 @@ interface Holder {
   isBurnAddress?: boolean;
 }
 
-interface Pool {
-  contractId: number;
-  tokAId: string;
-  tokBId: string;
-  symbolA: string;
-  symbolB: string;
-}
-
 interface TokenBalance {
   contractId: number;
   balance: string;
